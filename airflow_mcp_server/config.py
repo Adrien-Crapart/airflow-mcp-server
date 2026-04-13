@@ -16,5 +16,7 @@ class Config:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     # Read-only mode: when enabled, only read-only tools are exposed
     MCP_READ_ONLY: bool = os.getenv("MCP_READ_ONLY", "false").lower() == "true"
+    # MCP transport mode: "stdio" (Claude Desktop), "http" (Streamable HTTP), "both" (default)
+    MCP_TRANSPORT: str = os.getenv("MCP_TRANSPORT", "both")
 
 cfg = Config()
