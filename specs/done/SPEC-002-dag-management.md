@@ -1,7 +1,7 @@
 ---
 id: SPEC-002
 title: "DAG Management — List, Get, Trigger, Pause, Unpause, Run List, Source"
-status: active
+status: done
 domain: "handlers/dags"
 created: 2026-04-13
 updated: 2026-04-13
