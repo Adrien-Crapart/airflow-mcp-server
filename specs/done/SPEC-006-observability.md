@@ -1,7 +1,7 @@
 ---
 id: SPEC-006
 title: "Observability Tools — XComs, Import Errors, Datasets, Providers/Plugins"
-status: active
+status: done
 domain: "handlers/xcoms, handlers/import_errors, handlers/datasets, handlers/providers"
 created: 2026-04-13
 updated: 2026-04-13
