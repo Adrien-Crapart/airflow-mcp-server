@@ -1,7 +1,7 @@
 ---
 id: SPEC-004
 title: "Connection Management — Full CRUD Operations"
-status: active
+status: done
 domain: "handlers/connections"
 created: 2026-04-13
 updated: 2026-04-13
