@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  mcp:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - AIRFLOW_BASE_URL=${AIRFLOW_BASE_URL:-http://host.docker.internal:8080}
+      - AIRFLOW_USERNAME=${AIRFLOW_USERNAME:-airflow}
+      - AIRFLOW_PASSWORD=${AIRFLOW_PASSWORD:-airflow}
+    restart: unless-stopped

@@ -1,0 +1,12 @@
+# Environment
+.env
+.vscode
+.venv/
+airflow_mcp_server.egg-info/
+
+# Python
+*.pyc
+.coverage
+uv.lock
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10, 3.11, 3.12]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-asyncio httpx fastapi pydantic uvicorn asgi-lifespan
+
+      - name: Run tests
+        env:
+          AIRFLOW_BASE_URL: http://localhost:8080
+          AIRFLOW_USERNAME: ''
+          AIRFLOW_PASSWORD: ''
+        run: |
+          python -m pytest -q
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+      - name: Run unit tests
+        run: |
+          pytest -q
+
+  openapi:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+      - name: Export OpenAPI JSON
+        run: |
+          python - <<'PY'
+          import json
+          from airflow_mcp_server.server import create_app
+          app = create_app()
+          open('openapi.json','w').write(json.dumps(app.openapi(), indent=2))
+          PY
+      - name: Upload OpenAPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
+
+  integration:
+    needs: test
+    runs-on: ubuntu-latest
+    if: ${{ secrets.AIRFLOW_BASE_URL != '' }}
+    env:
+      AIRFLOW_BASE_URL: ${{ secrets.AIRFLOW_BASE_URL }}
+      AIRFLOW_USERNAME: ${{ secrets.AIRFLOW_USERNAME }}
+      AIRFLOW_PASSWORD: ${{ secrets.AIRFLOW_PASSWORD }}
+      AIRFLOW_VERSION: ${{ secrets.AIRFLOW_VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+      - name: Run integration tests
+        run: |
+          pytest tests/integration -q
+
+  docker-build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to DockerHub
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_PASSWORD }}
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Build image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          tags: airflow-mcp-server:ci
+      - name: Run container and smoke test
+        run: |
+          docker run -d --rm --name mcp_ci -p 8001:8000 airflow-mcp-server:ci
+          # wait for startup
+          sleep 3
+          curl -f http://localhost:8001/health
