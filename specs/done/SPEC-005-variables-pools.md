@@ -1,7 +1,7 @@
 ---
 id: SPEC-005
 title: "Variable & Pool Management — CRUD Variables + Pool Control"
-status: active
+status: done
 domain: "handlers/variables, handlers/pools"
 created: 2026-04-13
 updated: 2026-04-13
