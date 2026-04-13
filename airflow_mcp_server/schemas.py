@@ -170,6 +170,25 @@ class ClearTaskParams(BaseModel):
     task_id: str = Field(..., description="The task identifier within the DAG")
 
 
+class ListEventLogsParams(BaseModel):
+    limit: int = Field(100, ge=1, description="Maximum number of audit events to return. Default 100.")
+    dag_id: Optional[str] = Field(None, description="Filter by DAG ID (optional)")
+    event: Optional[str] = Field(None, description="Filter by event type (e.g. 'trigger', 'pause', 'success')")
+
+
+class EventLogIdParams(BaseModel):
+    event_log_id: int = Field(..., description="Numeric ID of the audit event")
+
+
+class ListDagWarningsParams(BaseModel):
+    dag_id: Optional[str] = Field(None, description="Filter by DAG ID (None = all DAGs)")
+    limit: int = Field(100, ge=1, description="Maximum number of warnings to return. Default 100.")
+
+
+class GetConfigParams(BaseModel):
+    section: Optional[str] = Field(None, description="Config section to filter (e.g. 'core', 'scheduler')")
+
+
 # Mapping tool_name -> pydantic model used to validate `params` dict
 TOOL_INPUT_MODELS: Dict[str, type] = {
     "airflow_dag_list": ListDagsParams,
@@ -210,4 +229,8 @@ TOOL_INPUT_MODELS: Dict[str, type] = {
     "airflow_task_get": TaskGetParams,
     "airflow_task_set_state": SetTaskStateParams,
     "airflow_task_clear": ClearTaskParams,
+    "airflow_event_log_list": ListEventLogsParams,
+    "airflow_event_log_get": EventLogIdParams,
+    "airflow_dag_warning_list": ListDagWarningsParams,
+    "airflow_config_get": GetConfigParams,
 }

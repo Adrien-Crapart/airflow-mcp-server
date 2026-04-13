@@ -1,7 +1,7 @@
 ---
 id: SPEC-010
 title: "Audit, Config & Monitoring — Event Logs, Config, Version, DAG Warnings"
-status: draft
+status: done
 domain: "handlers/event_logs, handlers/config, airflow_client"
 created: 2026-04-13
 updated: 2026-04-13
@@ -24,12 +24,12 @@ and debugging workflows.
 
 ## Acceptance criteria
 
-- [ ] `airflow_event_log_list` — list Airflow audit logs with filters
-- [ ] `airflow_event_log_get` — get a single audit event by ID
-- [ ] `airflow_config_get` — retrieve Airflow configuration
-- [ ] `airflow_version_get` — get Airflow version and metadata
-- [ ] `airflow_dag_warning_list` — list DAG warnings (SLA misses, import warnings)
-- [ ] Unit tests for all tools
+- [x] `airflow_event_log_list` — list Airflow audit logs with filters
+- [x] `airflow_event_log_get` — get a single audit event by ID
+- [x] `airflow_config_get` — retrieve Airflow configuration
+- [x] `airflow_version_get` — get Airflow version and metadata
+- [x] `airflow_dag_warning_list` — list DAG warnings (SLA misses, import warnings)
+- [x] Unit tests for all tools
 
 ## Technical approach
 

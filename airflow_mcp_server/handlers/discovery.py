@@ -21,6 +21,8 @@ TOOL_CATEGORIES = {
     "agent_tools": "agent",
     "health": "monitoring",
     "discovery": "meta",
+    "event_logs": "audit",
+    "config": "admin",
 }
 
 # Tools that are read-only (don't modify state)
@@ -95,6 +97,11 @@ TOOL_EXAMPLES = {
     "airflow_task_get": {"dag_id": "my_etl_dag", "task_id": "extract"},
     "airflow_task_set_state": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00", "task_id": "extract", "state": "success"},
     "airflow_task_clear": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00", "task_id": "extract"},
+    "airflow_event_log_list": {"limit": 50, "dag_id": "my_etl_dag", "event": "trigger"},
+    "airflow_event_log_get": {"event_log_id": 123},
+    "airflow_config_get": {"section": "core"},
+    "airflow_version_get": {},
+    "airflow_dag_warning_list": {"dag_id": "my_etl_dag", "limit": 10},
 }
 
 
