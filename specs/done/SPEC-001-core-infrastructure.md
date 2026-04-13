@@ -1,7 +1,7 @@
 ---
 id: SPEC-001
 title: "Core Infrastructure — Server, Client, Config, Health"
-status: active
+status: done
 domain: "server, airflow_client, config, schemas, health, discovery"
 created: 2026-04-13
 updated: 2026-04-13
