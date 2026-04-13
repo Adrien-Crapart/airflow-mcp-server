@@ -1,7 +1,7 @@
 ---
 id: SPEC-009
 title: "DAG Run Lifecycle — Clear, Cancel, State, Task Definitions"
-status: draft
+status: done
 domain: "handlers/dags, handlers/tasks, airflow_client"
 created: 2026-04-13
 updated: 2026-04-13
@@ -25,16 +25,16 @@ Airflow workflow execution without needing the Airflow UI.
 
 ## Acceptance criteria
 
-- [ ] `airflow_dag_run_get` — fetch a single DAG run by run_id
-- [ ] `airflow_dag_run_clear` — clear/re-run a DAG run (POST /dagRuns/{id}/clear)
-- [ ] `airflow_dag_run_cancel` — cancel/delete a running DAG run
-- [ ] `airflow_dag_run_set_state` — update DAG run state (mark success/failed)
-- [ ] `airflow_task_list` — list task definitions for a DAG (not instances)
-- [ ] `airflow_task_get` — get a single task definition
-- [ ] `airflow_task_set_state` — set a task instance state (clear, success, failed, skipped)
-- [ ] `airflow_task_clear` — clear a task instance to force re-run
-- [ ] Unit tests for all new tools (success, missing params, not found, connection error)
-- [ ] `WRITE_ONLY_TOOLS` updated in `server.py` for new mutating tools
+- [x] `airflow_dag_run_get` — fetch a single DAG run by run_id
+- [x] `airflow_dag_run_clear` — clear/re-run a DAG run (POST /dagRuns/{id}/clear)
+- [x] `airflow_dag_run_cancel` — cancel/delete a running DAG run
+- [x] `airflow_dag_run_set_state` — update DAG run state (mark success/failed)
+- [x] `airflow_task_list` — list task definitions for a DAG (not instances)
+- [x] `airflow_task_get` — get a single task definition
+- [x] `airflow_task_set_state` — set a task instance state (clear, success, failed, skipped)
+- [x] `airflow_task_clear` — clear a task instance to force re-run
+- [x] Unit tests for all new tools (success, missing params, not found, connection error)
+- [x] READ_ONLY_TOOLS updated in discovery.py for new mutating tools
 
 ## Technical approach
 

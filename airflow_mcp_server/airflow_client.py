@@ -420,6 +420,46 @@ class AirflowClient:
             return resp.get("plugins") or []
         return []
 
+    # DAG Run lifecycle methods
+    async def get_dag_run(self, dag_id: str, run_id: str) -> Any:
+        """GET /dags/{dag_id}/dagRuns/{run_id}"""
+        return await self._request_with_fallback("GET", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}")
+
+    async def clear_dag_run(self, dag_id: str, run_id: str, only_failed: bool = True) -> Any:
+        """POST /dags/{dag_id}/dagRuns/{run_id}/clear"""
+        payload = {"dry_run": False, "only_failed": only_failed, "reset_dag_runs": True}
+        return await self._request_with_fallback("POST", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/clear", json=payload)
+
+    async def delete_dag_run(self, dag_id: str, run_id: str) -> Any:
+        """DELETE /dags/{dag_id}/dagRuns/{run_id}"""
+        return await self._request_with_fallback("DELETE", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}")
+
+    async def update_dag_run_state(self, dag_id: str, run_id: str, state: str) -> Any:
+        """PATCH /dags/{dag_id}/dagRuns/{run_id}"""
+        payload = {"state": state}
+        return await self._request_with_fallback("PATCH", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}", json=payload)
+
+    # Task definition and instance management methods
+    async def list_tasks(self, dag_id: str) -> list:
+        """GET /dags/{dag_id}/tasks"""
+        resp = await self._request_with_fallback("GET", f"{self.api_prefix}/dags/{dag_id}/tasks")
+        if isinstance(resp, dict):
+            return resp.get("tasks") or []
+        return []
+
+    async def get_task(self, dag_id: str, task_id: str) -> Any:
+        """GET /dags/{dag_id}/tasks/{task_id}"""
+        return await self._request_with_fallback("GET", f"{self.api_prefix}/dags/{dag_id}/tasks/{task_id}")
+
+    async def set_task_instance_state(self, dag_id: str, run_id: str, task_id: str, state: str) -> Any:
+        """PATCH /dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}"""
+        payload = {"state": state, "include_upstream": False, "include_downstream": False}
+        return await self._request_with_fallback("PATCH", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}", json=payload)
+
+    async def clear_task_instance(self, dag_id: str, run_id: str, task_id: str) -> Any:
+        """POST /dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/clear"""
+        return await self._request_with_fallback("POST", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/clear")
+
     async def close(self) -> None:
         await self._client.aclose()
 

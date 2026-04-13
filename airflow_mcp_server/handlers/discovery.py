@@ -28,8 +28,12 @@ READ_ONLY_TOOLS = {
     "airflow_dag_list",
     "airflow_dag_get",
     "airflow_dag_run_list",
+    "airflow_dag_run_get",
+    "airflow_dag_source",
     "airflow_task_list_instances",
     "airflow_task_logs",
+    "airflow_task_list",
+    "airflow_task_get",
     "airflow_connection_list",
     "airflow_connection_get",
     "airflow_variable_list",
@@ -45,6 +49,8 @@ READ_ONLY_TOOLS = {
     "airflow_tools_list",
     "airflow_tool_get",
     "airflow_health_check",
+    "airflow_system_health",
+    "airflow_dag_diagnose",
 }
 
 # Tool examples: tool_name -> example params
@@ -81,6 +87,14 @@ TOOL_EXAMPLES = {
     "airflow_tool_get": {"tool_name": "airflow_dag_list"},
     "airflow_system_health": {},
     "airflow_health_check": {},
+    "airflow_dag_run_get": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00"},
+    "airflow_dag_run_clear": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00", "only_failed": True},
+    "airflow_dag_run_cancel": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00"},
+    "airflow_dag_run_set_state": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00", "state": "success"},
+    "airflow_task_list": {"dag_id": "my_etl_dag"},
+    "airflow_task_get": {"dag_id": "my_etl_dag", "task_id": "extract"},
+    "airflow_task_set_state": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00", "task_id": "extract", "state": "success"},
+    "airflow_task_clear": {"dag_id": "my_etl_dag", "run_id": "manual__2026-01-01T00:00:00+00:00", "task_id": "extract"},
 }
 
 
