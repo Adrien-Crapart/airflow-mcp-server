@@ -1,7 +1,7 @@
 ---
 id: SPEC-011
 title: "True MCP Protocol Compliance — SDK Migration, stdio/SSE Transports"
-status: draft
+status: done
 domain: "server.py, main.py, pyproject.toml"
 created: 2026-04-13
 updated: 2026-04-13

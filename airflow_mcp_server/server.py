@@ -2,7 +2,7 @@ import pkgutil
 import importlib
 import logging
 import inspect
-from typing import Dict, Callable, Any
+from typing import Dict, Callable, Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -14,7 +14,12 @@ WRITE_ONLY_TOOLS = {
     "airflow_dag_trigger",
     "airflow_dag_pause",
     "airflow_dag_unpause",
+    "airflow_dag_run_clear",
+    "airflow_dag_run_cancel",
+    "airflow_dag_run_set_state",
     "airflow_task_retry",
+    "airflow_task_set_state",
+    "airflow_task_clear",
     "airflow_connection_create",
     "airflow_connection_delete",
     "airflow_variable_set",
@@ -22,8 +27,12 @@ WRITE_ONLY_TOOLS = {
     "airflow_pool_set",
 }
 
+# Global MCP server instance (initialized lazily)
+_mcp_server: Optional[Any] = None
+
 
 def load_tools() -> Dict[str, Callable[[dict], Any]]:
+    """Load all tools from handler modules."""
     from airflow_mcp_server.config import cfg
 
     tools: Dict[str, Callable[[dict], Any]] = {}
@@ -32,7 +41,10 @@ def load_tools() -> Dict[str, Callable[[dict], Any]]:
     except Exception:
         return tools
     for _finder, name, _ispkg in pkgutil.iter_modules(handlers_pkg.__path__):
-        mod = importlib.import_module(f"airflow_mcp_server.handlers.{name}")
+        try:
+            mod = importlib.import_module(f"airflow_mcp_server.handlers.{name}")
+        except Exception:
+            continue
         module_tools = getattr(mod, "TOOLS", {})
         # If read-only mode is enabled, filter out write-only tools
         if cfg.MCP_READ_ONLY:
@@ -41,63 +53,73 @@ def load_tools() -> Dict[str, Callable[[dict], Any]]:
     return tools
 
 
-def create_app() -> FastAPI:
-    """Return a FastAPI ASGI app exposing MCP tool endpoints.
+def _get_mcp_server() -> Any:
+    """Lazy-initialize and return the MCP server instance."""
+    global _mcp_server
+    if _mcp_server is None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+            _mcp_server = FastMCP("Airflow MCP Server")
+            _register_tools_with_mcp(_mcp_server, load_tools())
+        except ImportError:
+            logger.warning("MCP SDK not available, proceeding without MCP protocol support")
+            return None
+    return _mcp_server
 
-    Loads handlers from `airflow_mcp_server.handlers` and exposes
-    `/tool`, `/tool/{tool_name}` and `/health`.
-    """
-    app = FastAPI(title="Airflow MCP Server")
 
-    tools = load_tools()
-    # import validation models
+def _register_tools_with_mcp(mcp: Any, tools: Dict[str, Callable]) -> None:
+    """Register all discovered tools with the MCP server."""
     try:
         from airflow_mcp_server import schemas as _schemas
     except Exception:
         _schemas = None
-    # Register explicit typed routes for tools that have Pydantic input models
-    if _schemas is not None:
-        for _name, _handler in list(tools.items()):
-            model = _schemas.TOOL_INPUT_MODELS.get(_name)
-            if model is None:
-                continue
 
-            def _make_endpoint(handler, model, name):
-                async def _endpoint(params):
-                    # params is a Pydantic model instance
+    for tool_name, handler in tools.items():
+        model = _schemas.TOOL_INPUT_MODELS.get(tool_name) if _schemas else None
+        description = (handler.__doc__ or "").split("\n")[0].strip() or tool_name
+
+        if model:
+            # Create tool with Pydantic model
+            def _make_mcp_tool(h, m, name, desc):
+                async def _tool_impl(**kwargs):
                     try:
-                        params_dict = params.model_dump()
-                    except Exception:
-                        params_dict = params
-                    result = handler(params_dict)
-                    if inspect.isawaitable(result):
+                        validated = m(**kwargs)
+                        params = validated.model_dump()
+                    except Exception as e:
+                        return {"success": False, "data": None, "error": f"Invalid params: {str(e)}"}
+                    try:
+                        result = h(params)
+                        if inspect.iscoroutine(result):
+                            result = await result
+                        return result if isinstance(result, dict) else {"success": True, "data": result, "error": None}
+                    except Exception as e:
+                        return {"success": False, "data": None, "error": str(e)}
+
+                _tool_impl.__doc__ = desc
+                return _tool_impl
+
+            tool_func = _make_mcp_tool(handler, model, tool_name, description)
+            mcp.tool(name=tool_name, description=description)(tool_func)
+        else:
+            # Create tool without model
+            async def _tool_no_schema():
+                try:
+                    result = handler({})
+                    if inspect.iscoroutine(result):
                         result = await result
-                    # If result is a Pydantic model, convert to dict
-                    try:
-                        from pydantic import BaseModel
+                    return result if isinstance(result, dict) else {"success": True, "data": result, "error": None}
+                except Exception as e:
+                    return {"success": False, "data": None, "error": str(e)}
 
-                        if isinstance(result, BaseModel):
-                            return result.model_dump()
-                    except Exception:
-                        pass
-                    if isinstance(result, dict):
-                        return result
-                    return {"success": True, "data": result, "error": None}
+            _tool_no_schema.__doc__ = description
+            mcp.tool(name=tool_name, description=description)(_tool_no_schema)
 
-                _endpoint.__name__ = f"tool_{name}"
-                # annotate for FastAPI to pick up the request model and response model
-                _endpoint.__annotations__ = {"params": model, "return": _schemas.ToolResponse}
-                return _endpoint
+    logger.info("Registered %d tools with MCP server", len(tools))
 
-            endpoint = _make_endpoint(_handler, model, _name)
-            # register a static route for this specific tool name to appear in OpenAPI
-            app.post(f"/tool/{_name}", response_model=_schemas.ToolResponse, name=f"tool_{_name}")(endpoint)
-    try:
-        logger.info("Loaded tools: %s", sorted(list(tools.keys())))
-    except Exception:
-        pass
 
-    # import Airflow-specific exceptions for mapping
+def create_app() -> FastAPI:
+    """Create a FastAPI app with MCP protocol and legacy HTTP support."""
+    from airflow_mcp_server.config import cfg
     from airflow_mcp_server.airflow_client import (
         AirflowAuthError,
         AirflowPermissionError,
@@ -107,23 +129,40 @@ def create_app() -> FastAPI:
         AirflowConnectionError,
     )
 
+    app = FastAPI(title="Airflow MCP Server")
+    tools = load_tools()
+
+    # Try to mount MCP server at /mcp if available
+    try:
+        mcp = _get_mcp_server()
+        if mcp is not None and cfg.MCP_TRANSPORT in ("http", "both"):
+            app.mount("/mcp", mcp.streamable_http_app())
+            logger.info("MCP HTTP transport mounted at /mcp")
+    except Exception as e:
+        logger.warning("Failed to mount MCP HTTP transport: %s", e)
+
+    # Import validation models
+    try:
+        from airflow_mcp_server import schemas as _schemas
+    except Exception:
+        _schemas = None
+
     def _make_response(body: dict, status: int = 200) -> JSONResponse:
         return JSONResponse(content=body, status_code=status)
 
     @app.post("/tool/{tool_name}")
     async def invoke_tool(tool_name: str, request: Request):
+        """Legacy HTTP endpoint for tool invocation."""
         logger.info("invoke_tool called for tool: %s", tool_name)
         try:
             payload = await request.json()
         except Exception as e:
-            try:
-                raw_body = await request.body()
-            except Exception:
-                raw_body = b"<unreadable>"
-            logger.exception("Failed to parse JSON for tool %s: %s — raw_body=%s headers=%s", tool_name, e, raw_body, getattr(request, "headers", None))
+            logger.exception("Failed to parse JSON for tool %s: %s", tool_name, e)
             payload = {}
+
         params = payload.get("params", {}) or {}
-        # validate params against schema if available
+
+        # Validate params against schema if available
         if _schemas is not None:
             model = _schemas.TOOL_INPUT_MODELS.get(tool_name)
             if model is not None:
@@ -132,27 +171,17 @@ def create_app() -> FastAPI:
                     params = validated.model_dump()
                 except Exception as exc:
                     return _make_response({"success": False, "data": None, "error": f"Invalid params: {exc}"}, 400)
+
         handler = tools.get(tool_name)
         if handler is None:
             logger.warning("Tool not found: %s", tool_name)
             return _make_response({"success": False, "data": None, "error": "Tool not found"}, 404)
+
         try:
             result = handler(params)
-            if inspect.isawaitable(result):
+            if inspect.iscoroutine(result):
                 result = await result
-            logger.info("handler result type: %s", type(result))
-            try:
-                logger.info("handler result repr: %s", repr(result)[:200])
-            except Exception:
-                pass
-            # If handler returned a Pydantic BaseModel, serialize it to dict
-            try:
-                from pydantic import BaseModel
 
-                if isinstance(result, BaseModel):
-                    return _make_response(result.model_dump(), 200)
-            except Exception:
-                pass
             if isinstance(result, dict):
                 return _make_response(result, 200)
             return _make_response({"success": True, "data": result, "error": None}, 200)
@@ -177,25 +206,24 @@ def create_app() -> FastAPI:
         except AirflowServerError as exc:
             logger.exception("Server error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 502)
-        except Exception as exc:  # pragma: no cover - unexpected
+        except Exception as exc:
             logger.exception("Unexpected error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 500)
 
     @app.post("/tool")
     async def invoke_tool_body(request: Request):
+        """Legacy HTTP endpoint: alternative body format."""
         logger.info("invoke_tool_body called")
         try:
             payload = await request.json()
         except Exception as e:
-            try:
-                raw_body = await request.body()
-            except Exception:
-                raw_body = b"<unreadable>"
-            logger.exception("Failed to parse JSON in fallback /tool: %s — raw_body=%s headers=%s", e, raw_body, getattr(request, "headers", None))
+            logger.exception("Failed to parse JSON in fallback /tool: %s", e)
             payload = {}
+
         tool_name = payload.get("tool_name") or payload.get("tool")
         params = payload.get("params", {}) or {}
-        # validate params against schema if available
+
+        # Validate params against schema if available
         if _schemas is not None and tool_name:
             model = _schemas.TOOL_INPUT_MODELS.get(tool_name)
             if model is not None:
@@ -204,6 +232,7 @@ def create_app() -> FastAPI:
                     params = validated.model_dump()
                 except Exception as exc:
                     return _make_response({"success": False, "data": None, "error": f"Invalid params: {exc}"}, 400)
+
         if not tool_name:
             return _make_response({"success": False, "data": None, "error": "Missing 'tool_name' in body"}, 400)
 
@@ -211,15 +240,12 @@ def create_app() -> FastAPI:
         if handler is None:
             logger.warning("Tool not found (body): %s", tool_name)
             return _make_response({"success": False, "data": None, "error": "Tool not found"}, 404)
+
         try:
             result = handler(params)
-            if inspect.isawaitable(result):
+            if inspect.iscoroutine(result):
                 result = await result
-            logger.info("handler result type (body): %s", type(result))
-            try:
-                logger.info("handler result repr (body): %s", repr(result)[:200])
-            except Exception:
-                pass
+
             if isinstance(result, dict):
                 return _make_response(result, 200)
             return _make_response({"success": True, "data": result, "error": None}, 200)
@@ -244,12 +270,21 @@ def create_app() -> FastAPI:
         except AirflowServerError as exc:
             logger.exception("Server error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 502)
-        except Exception as exc:  # pragma: no cover - unexpected
+        except Exception as exc:
             logger.exception("Unexpected error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 500)
 
     @app.get("/health")
-    async def http_health():
+    async def health():
         return {"status": "ok"}
 
+    logger.info("Loaded tools: %s", sorted(list(tools.keys())))
     return app
+
+
+def create_stdio_server() -> Any:
+    """Create an MCP server for stdio transport (Claude Desktop)."""
+    mcp = _get_mcp_server()
+    if mcp is None:
+        raise RuntimeError("MCP SDK not available")
+    return mcp
