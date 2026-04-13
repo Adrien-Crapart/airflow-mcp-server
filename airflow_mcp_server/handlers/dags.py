@@ -10,24 +10,82 @@ from airflow_mcp_server.schemas import (
 
 
 async def list_dags(params: dict) -> ToolResponse:
+    """List all available DAGs.
+
+    Args:
+        params: Dictionary containing:
+            - limit (int, optional): Maximum number of DAGs to return. Default 100.
+            - offset (int, optional): Pagination offset. Default 0.
+
+    Returns:
+        {"success": True, "data": [{"dag_id": str, "is_paused": bool, ...}], "error": None}
+
+    Raises:
+        AirflowConnectionError: If Airflow is unreachable.
+        AirflowAuthError: If credentials are invalid.
+    """
     validated = ListDagsParams.model_validate(params or {})
     dags = await airflow_client.list_dags(limit=validated.limit, offset=validated.offset)
     return ToolResponse(success=True, data=dags, error=None).model_dump()
 
 
 async def get_dag(params: dict) -> ToolResponse:
+    """Get details of a specific DAG.
+
+    Args:
+        params: Dictionary containing:
+            - dag_id (str): The unique identifier of the DAG.
+
+    Returns:
+        {"success": True, "data": {"dag_id": str, "is_paused": bool, ...}, "error": None}
+
+    Raises:
+        ValueError: If dag_id is empty.
+        AirflowNotFoundError: If the DAG does not exist.
+        AirflowConnectionError: If Airflow is unreachable.
+    """
     validated = DagIdParams.model_validate(params or {})
     dag = await airflow_client.get_dag(validated.dag_id)
     return ToolResponse(success=True, data=dag, error=None).model_dump()
 
 
 async def trigger_dag(params: dict) -> ToolResponse:
+    """Trigger a DAG run.
+
+    Args:
+        params: Dictionary containing:
+            - dag_id (str): The unique identifier of the DAG to trigger.
+            - conf (dict, optional): Optional run configuration.
+
+    Returns:
+        {"success": True, "data": {"dag_run_id": str, ...}, "error": None}
+
+    Raises:
+        ValueError: If dag_id is empty.
+        AirflowNotFoundError: If the DAG does not exist.
+        AirflowConnectionError: If Airflow is unreachable.
+    """
     validated = TriggerDagParams.model_validate(params or {})
     result = await airflow_client.trigger_dag(validated.dag_id, conf=validated.conf)
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
 async def list_dag_runs(params: dict) -> ToolResponse:
+    """List all runs of a specific DAG.
+
+    Args:
+        params: Dictionary containing:
+            - dag_id (str): The unique identifier of the DAG.
+            - limit (int, optional): Maximum number of runs to return. Default 100.
+
+    Returns:
+        {"success": True, "data": [{"dag_run_id": str, "state": str, ...}], "error": None}
+
+    Raises:
+        ValueError: If dag_id is empty.
+        AirflowNotFoundError: If the DAG does not exist.
+        AirflowConnectionError: If Airflow is unreachable.
+    """
     validated = DagRunListParams.model_validate(params or {})
     runs = await airflow_client.list_dag_runs(validated.dag_id, limit=validated.limit)
     return ToolResponse(success=True, data=runs, error=None).model_dump()
@@ -42,12 +100,40 @@ TOOLS = {
 
 
 async def pause_dag(params: dict) -> ToolResponse:
+    """Pause a DAG to prevent automatic scheduling.
+
+    Args:
+        params: Dictionary containing:
+            - dag_id (str): The unique identifier of the DAG.
+
+    Returns:
+        {"success": True, "data": dict, "error": None}
+
+    Raises:
+        ValueError: If dag_id is empty.
+        AirflowNotFoundError: If the DAG does not exist.
+        AirflowConnectionError: If Airflow is unreachable.
+    """
     validated = DagIdParams.model_validate(params or {})
     result = await airflow_client.pause_dag(validated.dag_id)
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
 async def unpause_dag(params: dict) -> ToolResponse:
+    """Resume a paused DAG to enable automatic scheduling.
+
+    Args:
+        params: Dictionary containing:
+            - dag_id (str): The unique identifier of the DAG.
+
+    Returns:
+        {"success": True, "data": dict, "error": None}
+
+    Raises:
+        ValueError: If dag_id is empty.
+        AirflowNotFoundError: If the DAG does not exist.
+        AirflowConnectionError: If Airflow is unreachable.
+    """
     validated = DagIdParams.model_validate(params or {})
     result = await airflow_client.unpause_dag(validated.dag_id)
     return ToolResponse(success=True, data=result, error=None).model_dump()
