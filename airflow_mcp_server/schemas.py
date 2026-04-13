@@ -131,6 +131,45 @@ class ToolGetParams(BaseModel):
     tool_name: str = Field(..., description="The name of the tool to fetch (e.g. 'airflow_dag_list')")
 
 
+class DagRunIdParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+    run_id: str = Field(..., description="The run identifier")
+
+
+class ClearDagRunParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+    run_id: str = Field(..., description="The DAG run to clear")
+    only_failed: bool = Field(True, description="Only clear failed tasks (default: True)")
+
+
+class SetDagRunStateParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+    run_id: str = Field(..., description="The run identifier")
+    state: str = Field(..., description="Target state: 'success', 'failed', 'queued', 'running'")
+
+
+class TaskListParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+
+
+class TaskGetParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+    task_id: str = Field(..., description="The task identifier within the DAG")
+
+
+class SetTaskStateParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+    run_id: str = Field(..., description="The run identifier")
+    task_id: str = Field(..., description="The task identifier within the DAG")
+    state: str = Field(..., description="Target state: 'success', 'failed', 'skipped', 'up_for_retry'")
+
+
+class ClearTaskParams(BaseModel):
+    dag_id: str = Field(..., description="The unique identifier of the DAG")
+    run_id: str = Field(..., description="The run identifier")
+    task_id: str = Field(..., description="The task identifier within the DAG")
+
+
 # Mapping tool_name -> pydantic model used to validate `params` dict
 TOOL_INPUT_MODELS: Dict[str, type] = {
     "airflow_dag_list": ListDagsParams,
@@ -163,4 +202,12 @@ TOOL_INPUT_MODELS: Dict[str, type] = {
     "airflow_provider_list": ListProvidersParams,
     "airflow_plugin_list": ListPluginsParams,
     "airflow_tool_get": ToolGetParams,
+    "airflow_dag_run_get": DagRunIdParams,
+    "airflow_dag_run_clear": ClearDagRunParams,
+    "airflow_dag_run_cancel": DagRunIdParams,
+    "airflow_dag_run_set_state": SetDagRunStateParams,
+    "airflow_task_list": TaskListParams,
+    "airflow_task_get": TaskGetParams,
+    "airflow_task_set_state": SetTaskStateParams,
+    "airflow_task_clear": ClearTaskParams,
 }
