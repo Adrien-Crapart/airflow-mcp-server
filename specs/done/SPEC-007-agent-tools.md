@@ -1,7 +1,7 @@
 ---
 id: SPEC-007
 title: "Agent Tools & Read-only Safety Mode"
-status: active
+status: done
 domain: "handlers/agent_tools, server.py, config.py"
 created: 2026-04-13
 updated: 2026-04-13
