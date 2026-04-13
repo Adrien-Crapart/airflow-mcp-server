@@ -1,7 +1,7 @@
 ---
 id: SPEC-008
 title: "Tool Schema & Discoverability — JSON Schema, Descriptions, Categories"
-status: draft
+status: done
 domain: "schemas, handlers, discovery"
 created: 2026-04-13
 updated: 2026-04-13
@@ -27,14 +27,14 @@ without consulting external documentation.
 
 ## Acceptance criteria
 
-- [ ] Every Pydantic field in `schemas.py` has a `description=` in its `Field()` call
-- [ ] Every handler function has a Google-style docstring (Args, Returns, Raises)
-- [ ] `airflow_tools_list` returns `input_schema` (JSON Schema object) per tool
-- [ ] `airflow_tools_list` returns `read_only: bool` per tool
-- [ ] `airflow_tools_list` returns `category: str` per tool (e.g., "dag", "task", "monitoring")
-- [ ] `airflow_tools_list` returns `examples: list` per tool (at least 1 example invocation)
-- [ ] New tool `airflow_tool_get` — fetch schema for a single tool by name
-- [ ] Unit tests for discovery response shape and field completeness
+- [x] Every Pydantic field in `schemas.py` has a `description=` in its `Field()` call
+- [x] Every handler function has a Google-style docstring (Args, Returns, Raises)
+- [x] `airflow_tools_list` returns `input_schema` (JSON Schema object) per tool
+- [x] `airflow_tools_list` returns `read_only: bool` per tool
+- [x] `airflow_tools_list` returns `category: str` per tool (e.g., "dag", "task", "monitoring")
+- [x] `airflow_tools_list` returns `examples: list` per tool (at least 1 example invocation)
+- [x] New tool `airflow_tool_get` — fetch schema for a single tool by name
+- [x] Unit tests for discovery response shape and field completeness
 
 ## Technical approach
 
