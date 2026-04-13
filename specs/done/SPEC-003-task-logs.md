@@ -1,7 +1,7 @@
 ---
 id: SPEC-003
 title: "Task & Log Management — List Instances, Retry, Fetch Logs"
-status: active
+status: done
 domain: "handlers/tasks, handlers/logs"
 created: 2026-04-13
 updated: 2026-04-13
