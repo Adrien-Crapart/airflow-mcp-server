@@ -460,6 +460,44 @@ class AirflowClient:
         """POST /dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/clear"""
         return await self._request_with_fallback("POST", f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/clear")
 
+    # Audit and config methods
+    async def list_event_logs(self, limit: int = 100, dag_id: Optional[str] = None, event: Optional[str] = None) -> Any:
+        """GET /eventLogs — Airflow audit trail."""
+        params = {"limit": limit}
+        if dag_id:
+            params["dag_id"] = dag_id
+        if event:
+            params["event"] = event
+        resp = await self._request_with_fallback("GET", f"{self.api_prefix}/eventLogs", params=params)
+        if isinstance(resp, dict):
+            return resp.get("entries") or resp.get("events") or []
+        return []
+
+    async def get_event_log(self, event_log_id: int) -> Any:
+        """GET /eventLogs/{event_log_id}"""
+        return await self._request_with_fallback("GET", f"{self.api_prefix}/eventLogs/{event_log_id}")
+
+    async def get_config(self, section: Optional[str] = None) -> Any:
+        """GET /config — Airflow configuration (may require admin permissions)."""
+        resp = await self._request_with_fallback("GET", f"{self.api_prefix}/config")
+        if section and isinstance(resp, dict):
+            return resp.get(section, {})
+        return resp
+
+    async def get_version(self) -> Any:
+        """GET /version — Airflow version metadata."""
+        return await self._request_with_fallback("GET", f"{self.api_prefix}/version")
+
+    async def list_dag_warnings(self, dag_id: Optional[str] = None, limit: int = 100) -> Any:
+        """GET /dagWarnings"""
+        params = {"limit": limit}
+        if dag_id:
+            params["dag_id"] = dag_id
+        resp = await self._request_with_fallback("GET", f"{self.api_prefix}/dagWarnings", params=params)
+        if isinstance(resp, dict):
+            return resp.get("dag_warnings") or resp.get("warnings") or []
+        return []
+
     async def close(self) -> None:
         await self._client.aclose()
 
