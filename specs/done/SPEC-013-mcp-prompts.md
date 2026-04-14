@@ -1,7 +1,7 @@
 ---
 id: SPEC-013
 title: "MCP Prompts — Workflow Templates for Common Airflow Operations"
-status: draft
+status: done
 domain: "server.py, handlers/prompts.py"
 created: 2026-04-13
 updated: 2026-04-13
