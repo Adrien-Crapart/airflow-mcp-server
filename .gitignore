@@ -10,3 +10,6 @@ airflow_mcp_server.egg-info/
 uv.lock
 __pycache__/
 .pytest_cache/
+
+# claude
+.claude/settings.local.json

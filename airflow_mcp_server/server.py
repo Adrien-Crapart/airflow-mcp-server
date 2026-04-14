@@ -61,6 +61,7 @@ def _get_mcp_server() -> Any:
             from mcp.server.fastmcp import FastMCP
             _mcp_server = FastMCP("Airflow MCP Server")
             _register_tools_with_mcp(_mcp_server, load_tools())
+            _register_resources_with_mcp(_mcp_server)
         except ImportError:
             logger.warning("MCP SDK not available, proceeding without MCP protocol support")
             return None
@@ -115,6 +116,16 @@ def _register_tools_with_mcp(mcp: Any, tools: Dict[str, Callable]) -> None:
             mcp.tool(name=tool_name, description=description)(_tool_no_schema)
 
     logger.info("Registered %d tools with MCP server", len(tools))
+
+
+def _register_resources_with_mcp(mcp: Any) -> None:
+    """Register MCP resources (read-only content) with the MCP server."""
+    try:
+        from airflow_mcp_server.handlers import resources as _resources_module
+        _resources_module.register_all(mcp)
+        logger.info("Registered MCP resources with server")
+    except Exception as e:
+        logger.warning("Failed to register MCP resources: %s", e)
 
 
 def create_app() -> FastAPI:

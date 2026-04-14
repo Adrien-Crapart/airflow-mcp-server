@@ -1,7 +1,7 @@
 ---
 id: SPEC-012
 title: "MCP Resources — airflow:// URI Scheme for Read-only Content"
-status: draft
+status: done
 domain: "server.py, handlers/resources.py"
 created: 2026-04-13
 updated: 2026-04-13
