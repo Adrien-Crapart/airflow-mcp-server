@@ -27,6 +27,27 @@ async def test_list_connections_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_list_connections_masks_sensitive_fields(monkeypatch):
+    async def _fake_list(limit=100):
+        return [
+            {
+                "conn_id": "my_conn",
+                "conn_type": "http",
+                "password": "plain",
+                "extra": {"api_key": "123"},
+            }
+        ]
+
+    monkeypatch.setattr(_client.client, "list_connections", _fake_list)
+
+    res = await connections.list_connections({})
+
+    assert res["success"] is True
+    assert res["data"][0]["password"] == "***MASKED***"
+    assert res["data"][0]["extra"] == "***MASKED***"
+
+
+@pytest.mark.asyncio
 async def test_list_connections_empty(monkeypatch):
     async def _fake_list(limit=100):
         return []
@@ -63,6 +84,26 @@ async def test_get_connection_success(monkeypatch):
     assert res["data"]["conn_id"] == "postgres_default"
     assert res["data"]["conn_type"] == "postgres"
     assert res["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_connection_masks_sensitive_fields(monkeypatch):
+    async def _fake_get(conn_id):
+        return {
+            "conn_id": conn_id,
+            "conn_type": "postgres",
+            "host": "localhost",
+            "password": "secret",
+            "token": "abcd",
+        }
+
+    monkeypatch.setattr(_client.client, "get_connection", _fake_get)
+
+    res = await connections.get_connection({"conn_id": "postgres_default"})
+
+    assert res["success"] is True
+    assert res["data"]["password"] == "***MASKED***"
+    assert res["data"]["token"] == "***MASKED***"
 
 
 @pytest.mark.asyncio
@@ -143,3 +184,31 @@ async def test_delete_connection_connection_error(monkeypatch):
 
     with pytest.raises(AirflowConnectionError):
         await connections.delete_connection({"conn_id": "some_conn"})
+
+
+@pytest.mark.asyncio
+async def test_create_connection_masks_sensitive_fields(monkeypatch):
+    async def _fake_create(conn_id, conn_type, host, login=None, password=None, port=None, extra=None):
+        return {
+            "conn_id": conn_id,
+            "conn_type": conn_type,
+            "host": host,
+            "password": password,
+            "extra": extra,
+        }
+
+    monkeypatch.setattr(_client.client, "create_connection", _fake_create)
+
+    res = await connections.create_connection(
+        {
+            "conn_id": "created_conn",
+            "type": "http",
+            "host": "example.com",
+            "password": "plain-password",
+            "extra": {"client_secret": "x"},
+        }
+    )
+
+    assert res["success"] is True
+    assert res["data"]["password"] == "***MASKED***"
+    assert res["data"]["extra"] == "***MASKED***"

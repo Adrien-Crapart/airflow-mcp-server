@@ -58,7 +58,9 @@ curl -s -X POST http://localhost:8000/tool/airflow_dag_trigger \
 
 4) `airflow_task_retry`
 
-- Description: requests a retry for a task (sets state to `queued` via setState).
+- Description: requests a retry for a task. The client first tries the legacy
+  `setState` endpoint and falls back to Airflow 3 `clearTaskInstances` when
+  needed.
 - Payload: `{ "params": { "dag_id": "my_dag", "run_id": "my_run", "task_id": "my_task" } }`
 
 5) `airflow_task_logs`
@@ -83,7 +85,8 @@ curl -s -X POST http://localhost:8000/tool/airflow_dag_trigger \
 9) `airflow_tools_list` (discovery)
 
 - Description: returns a list of exposed tools with useful metadata
-  (`tool_name`, `module`, `has_input_model`, `doc`, `signature`).
+  (`tool_name`, `module`, `category`, `read_only`, `description`,
+  `input_schema`, `examples`).
 - Example curl:
 
 ```bash
@@ -93,7 +96,7 @@ curl -s -X POST http://localhost:8000/tool/airflow_tools_list \
 
 ## Behavior and compatibility
 
-- The Airflow client supports `/api/v1` and `/api/v2`. Default `AIRFLOW_VERSION` = `2`.
+- The Airflow client targets Airflow 3.x exclusively via `/api/v2`.
 - The client applies a retry/backoff strategy and converts HTTP errors
   into specific exceptions (`AirflowAuthError`, `AirflowConnectionError`, ...).
 
@@ -101,13 +104,23 @@ curl -s -X POST http://localhost:8000/tool/airflow_tools_list \
 
 - `AIRFLOW_BASE_URL` (e.g. `http://localhost:8080`)
 - `AIRFLOW_USERNAME`, `AIRFLOW_PASSWORD` (BasicAuth — optional)
-- `AIRFLOW_VERSION` (`2` or `3`)
+- `AIRFLOW_API_TOKEN` (Bearer token — optional, takes precedence over BasicAuth)
+- `MCP_REQUIRE_AUTH` (default `true`, protects `/tool*` and `/mcp`)
+- `MCP_AUTH_TOKEN` (optional token for non-local clients when auth is enabled)
+- `MCP_ENABLE_ADMIN_ENDPOINTS` (default `false`, controls admin/config surfaces)
+- `MCP_READ_ONLY` (default `false`, hides mutating tools)
+
+## Security behavior
+
+- Sensitive values are masked in variable and connection handler responses.
+- Admin configuration capabilities are disabled by default.
+- Read-only mode excludes mutating tools from discovery and invocation.
 
 ## Tests
 
-- Integration tests include a fallback: if Airflow is unreachable,
-  an `httpx.MockTransport` simulates common endpoints to allow tests to
-  run in isolated environments.
+- Integration tests require a reachable real Airflow instance by default.
+- Mock fallback (`httpx.MockTransport`) is opt-in via
+  `AIRFLOW_INTEGRATION_ALLOW_MOCK_FALLBACK=true`.
 
 ## Useful links
 

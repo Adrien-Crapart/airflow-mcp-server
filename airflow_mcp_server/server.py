@@ -2,6 +2,8 @@ import pkgutil
 import importlib
 import logging
 import inspect
+import ipaddress
+import secrets
 from typing import Dict, Callable, Any, Optional
 
 from fastapi import FastAPI, Request
@@ -27,8 +29,61 @@ WRITE_ONLY_TOOLS = {
     "airflow_pool_set",
 }
 
+# Tools exposing sensitive admin/config surfaces.
+ADMIN_ONLY_TOOLS = {
+    "airflow_config_get",
+}
+
 # Global MCP server instance (initialized lazily)
 _mcp_server: Optional[Any] = None
+
+
+def _is_local_client_host(host: Optional[str]) -> bool:
+    """Return True when the request client host resolves to loopback/local.
+
+    TestClient uses "testclient", which is treated as local for unit tests.
+    """
+    if not host:
+        return False
+    normalized = host.strip().lower()
+    if normalized in {"localhost", "127.0.0.1", "::1", "testclient"}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _extract_bearer_token(authorization_header: Optional[str]) -> str:
+    """Extract bearer token from Authorization header, if present."""
+    if not authorization_header:
+        return ""
+    value = authorization_header.strip()
+    if not value.lower().startswith("bearer "):
+        return ""
+    return value[7:].strip()
+
+
+def _is_request_authorized(request: Request, cfg: Any) -> bool:
+    """Authorize request for protected HTTP routes.
+
+    Rules:
+    - If auth is disabled, allow.
+    - If MCP_AUTH_TOKEN is set, require Bearer or X-API-Key to match.
+    - If auth is enabled but no token configured, allow loopback only.
+    """
+    if not getattr(cfg, "MCP_REQUIRE_AUTH", False):
+        return True
+
+    expected_token = (getattr(cfg, "MCP_AUTH_TOKEN", "") or "").strip()
+    if expected_token:
+        bearer = _extract_bearer_token(request.headers.get("authorization"))
+        api_key = (request.headers.get("x-api-key") or "").strip()
+        candidate = bearer or api_key
+        return bool(candidate) and secrets.compare_digest(candidate, expected_token)
+
+    host = request.client.host if request.client else None
+    return _is_local_client_host(host)
 
 
 def load_tools() -> Dict[str, Callable[[dict], Any]]:
@@ -38,17 +93,22 @@ def load_tools() -> Dict[str, Callable[[dict], Any]]:
     tools: Dict[str, Callable[[dict], Any]] = {}
     try:
         import airflow_mcp_server.handlers as handlers_pkg
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to import handlers package: %s", exc)
         return tools
     for _finder, name, _ispkg in pkgutil.iter_modules(handlers_pkg.__path__):
         try:
             mod = importlib.import_module(f"airflow_mcp_server.handlers.{name}")
-        except Exception:
+        except Exception as exc:
+            logger.warning("Skipping handler module '%s' due to import error: %s", name, exc)
             continue
         module_tools = getattr(mod, "TOOLS", {})
         # If read-only mode is enabled, filter out write-only tools
         if cfg.MCP_READ_ONLY:
             module_tools = {k: v for k, v in module_tools.items() if k not in WRITE_ONLY_TOOLS}
+        # Hide sensitive admin tools unless explicitly enabled.
+        if not cfg.MCP_ENABLE_ADMIN_ENDPOINTS:
+            module_tools = {k: v for k, v in module_tools.items() if k not in ADMIN_ONLY_TOOLS}
         tools.update(module_tools)
     return tools
 
@@ -71,10 +131,11 @@ def _get_mcp_server() -> Any:
 
 def _register_tools_with_mcp(mcp: Any, tools: Dict[str, Callable]) -> None:
     """Register all discovered tools with the MCP server."""
+    _schemas: Any = None
     try:
         from airflow_mcp_server import schemas as _schemas
     except Exception:
-        _schemas = None
+        pass
 
     for tool_name, handler in tools.items():
         model = _schemas.TOOL_INPUT_MODELS.get(tool_name) if _schemas else None
@@ -104,17 +165,21 @@ def _register_tools_with_mcp(mcp: Any, tools: Dict[str, Callable]) -> None:
             mcp.tool(name=tool_name, description=description)(tool_func)
         else:
             # Create tool without model
-            async def _tool_no_schema():
-                try:
-                    result = handler({})
-                    if inspect.iscoroutine(result):
-                        result = await result
-                    return result if isinstance(result, dict) else {"success": True, "data": result, "error": None}
-                except Exception as e:
-                    return {"success": False, "data": None, "error": str(e)}
+            def _make_mcp_tool_no_schema(h, desc):
+                async def _tool_no_schema():
+                    try:
+                        result = h({})
+                        if inspect.iscoroutine(result):
+                            result = await result
+                        return result if isinstance(result, dict) else {"success": True, "data": result, "error": None}
+                    except Exception as e:
+                        return {"success": False, "data": None, "error": str(e)}
 
-            _tool_no_schema.__doc__ = description
-            mcp.tool(name=tool_name, description=description)(_tool_no_schema)
+                _tool_no_schema.__doc__ = desc
+                return _tool_no_schema
+
+            tool_func = _make_mcp_tool_no_schema(handler, description)
+            mcp.tool(name=tool_name, description=description)(tool_func)
 
     logger.info("Registered %d tools with MCP server", len(tools))
 
@@ -154,6 +219,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Airflow MCP Server")
     tools = load_tools()
 
+    if cfg.MCP_REQUIRE_AUTH and not cfg.MCP_AUTH_TOKEN:
+        logger.warning("MCP auth is enabled without MCP_AUTH_TOKEN; only loopback clients can access /tool* and /mcp.")
+
     # Try to mount MCP server at /mcp if available
     try:
         mcp = _get_mcp_server()
@@ -164,13 +232,23 @@ def create_app() -> FastAPI:
         logger.warning("Failed to mount MCP HTTP transport: %s", e)
 
     # Import validation models
+    _schemas: Any = None
     try:
         from airflow_mcp_server import schemas as _schemas
     except Exception:
-        _schemas = None
+        pass
 
     def _make_response(body: dict, status: int = 200) -> JSONResponse:
         return JSONResponse(content=body, status_code=status)
+
+    @app.middleware("http")
+    async def _auth_middleware(request: Request, call_next):
+        path = request.url.path
+        if (path.startswith("/tool") or path.startswith("/mcp")) and not _is_request_authorized(request, cfg):
+            client_host = request.client.host if request.client else "unknown"
+            logger.warning("Unauthorized request to %s from %s", path, client_host)
+            return _make_response({"success": False, "data": None, "error": "Unauthorized"}, 401)
+        return await call_next(request)
 
     @app.post("/tool/{tool_name}")
     async def invoke_tool(tool_name: str, request: Request):
@@ -179,7 +257,7 @@ def create_app() -> FastAPI:
         try:
             payload = await request.json()
         except Exception as e:
-            logger.exception("Failed to parse JSON for tool %s: %s", tool_name, e)
+            logger.warning("Failed to parse JSON for tool %s: %s", tool_name, e)
             payload = {}
 
         params = payload.get("params", {}) or {}
@@ -208,19 +286,19 @@ def create_app() -> FastAPI:
                 return _make_response(result, 200)
             return _make_response({"success": True, "data": result, "error": None}, 200)
         except ValueError as exc:
-            logger.exception("Bad request for tool %s: %s", tool_name, exc)
+            logger.warning("Bad request for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 400)
         except AirflowAuthError as exc:
-            logger.exception("Auth error for tool %s: %s", tool_name, exc)
+            logger.warning("Auth error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 401)
         except AirflowPermissionError as exc:
-            logger.exception("Permission error for tool %s: %s", tool_name, exc)
+            logger.warning("Permission error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 403)
         except AirflowNotFoundError as exc:
-            logger.exception("Not found for tool %s: %s", tool_name, exc)
+            logger.warning("Not found for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 404)
         except AirflowConflictError as exc:
-            logger.exception("Conflict for tool %s: %s", tool_name, exc)
+            logger.warning("Conflict for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 409)
         except AirflowConnectionError as exc:
             logger.exception("Connection error for tool %s: %s", tool_name, exc)
@@ -239,7 +317,7 @@ def create_app() -> FastAPI:
         try:
             payload = await request.json()
         except Exception as e:
-            logger.exception("Failed to parse JSON in fallback /tool: %s", e)
+            logger.warning("Failed to parse JSON in fallback /tool: %s", e)
             payload = {}
 
         tool_name = payload.get("tool_name") or payload.get("tool")
@@ -272,19 +350,19 @@ def create_app() -> FastAPI:
                 return _make_response(result, 200)
             return _make_response({"success": True, "data": result, "error": None}, 200)
         except ValueError as exc:
-            logger.exception("Bad request for tool %s: %s", tool_name, exc)
+            logger.warning("Bad request for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 400)
         except AirflowAuthError as exc:
-            logger.exception("Auth error for tool %s: %s", tool_name, exc)
+            logger.warning("Auth error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 401)
         except AirflowPermissionError as exc:
-            logger.exception("Permission error for tool %s: %s", tool_name, exc)
+            logger.warning("Permission error for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 403)
         except AirflowNotFoundError as exc:
-            logger.exception("Not found for tool %s: %s", tool_name, exc)
+            logger.warning("Not found for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 404)
         except AirflowConflictError as exc:
-            logger.exception("Conflict for tool %s: %s", tool_name, exc)
+            logger.warning("Conflict for tool %s: %s", tool_name, exc)
             return _make_response({"success": False, "data": None, "error": str(exc)}, 409)
         except AirflowConnectionError as exc:
             logger.exception("Connection error for tool %s: %s", tool_name, exc)

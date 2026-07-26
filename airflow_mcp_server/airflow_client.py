@@ -1,6 +1,6 @@
 import asyncio
+from datetime import datetime, timezone
 import logging
-import re
 from typing import Any, Optional
 
 import httpx
@@ -37,7 +37,7 @@ class AirflowServerError(AirflowError):
     pass
 
 
-class AirflowConnectionError(ConnectionError):
+class AirflowConnectionError(AirflowError):
     pass
 
 
@@ -55,15 +55,11 @@ class AirflowClient:
         # Prefer explicitly passed credentials; fall back to config (may be empty).
         self.username = username if username is not None else cfg.AIRFLOW_USERNAME
         self.password = password if password is not None else cfg.AIRFLOW_PASSWORD
-        # Airflow major version (string), e.g. '2' or '3'
-        self.version = str(getattr(cfg, "AIRFLOW_VERSION", "2"))
-        # Map Airflow major version to the API prefix used by the REST API.
-        # Airflow 2.x typically exposes /api/v1, while Airflow 3.x upgrades
-        # to /api/v2.
-        if self.version and str(self.version).startswith("3"):
-            self.api_prefix = "/api/v2"
-        else:
-            self.api_prefix = "/api/v1"
+        # Support Bearer token authentication via `AIRFLOW_API_TOKEN`.
+        # If present, prefer token over BasicAuth.
+        self.token = cfg.AIRFLOW_API_TOKEN
+        # This client targets Airflow 3.x exclusively, which exposes /api/v2.
+        self.api_prefix = "/api/v2"
         if http_client is not None:
             # If a client was provided without a base_url, create a client
             # bound to the configured base_url so relative paths work.
@@ -76,111 +72,70 @@ class AirflowClient:
                 self._client = http_client
             else:
                 auth = None
-                if self.username and self.password:
-                    auth = httpx.BasicAuth(self.username, self.password)
+                headers = None
+                # If token present, use Bearer header and ignore BasicAuth
+                if self.token:
+                    headers = {"Authorization": f"Bearer {self.token}"}
+                else:
+                    if self.username and self.password:
+                        auth = httpx.BasicAuth(self.username, self.password)
+
                 self._client = httpx.AsyncClient(
                     base_url=self.base_url,
-                    auth=auth,
+                    auth=auth if not headers else None,
+                    headers=headers,
                     timeout=30.0,
                 )
         else:
             auth = None
-            if self.username and self.password:
-                auth = httpx.BasicAuth(self.username, self.password)
+            headers = None
+            if self.token:
+                headers = {"Authorization": f"Bearer {self.token}"}
+            else:
+                if self.username and self.password:
+                    auth = httpx.BasicAuth(self.username, self.password)
+
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                auth=auth,
+                auth=auth if not headers else None,
+                headers=headers,
                 timeout=30.0,
             )
 
-    def _to_snake_path(self, path: str) -> str:
-        """Return a snake_case variant of a REST path by converting camelCase
-        segments to snake_case. Placeholders like `{dag_id}` are left intact.
-        This helps support API differences between Airflow major versions.
-        """
-        parts = path.split("/")
-        new_parts = []
-        for p in parts:
-            if not p or p.startswith("{"):
-                new_parts.append(p)
-                continue
-            s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", p)
-            new_parts.append(s.lower())
-        return "/".join(new_parts)
+    async def _request_with_fallback(self, method: str, path: str, params: Optional[dict] = None, json: Optional[dict] = None, retries: int = 3, allow_auth_switch: bool = True) -> Any:
+        """Call the Airflow v2 REST API, retrying once on an auth failure.
 
-    async def _request_with_fallback(self, method: str, path: str, params: Optional[dict] = None, json: Optional[dict] = None, retries: int = 3, allow_api_switch: bool = True, allow_auth_switch: bool = True) -> Any:
-        """Try the primary path, then a snake_case variant if available.
-
-        If a 404 (AirflowNotFoundError) occurs for the primary path, the
-        snake_case variant is attempted. Other exceptions are raised
+        On `AirflowAuthError`, a single auth-switch attempt is made: if we
+        sent auth, retry once without it; if we sent no auth but credentials
+        are configured, retry once with BasicAuth. Other exceptions propagate
         immediately.
         """
-        # Keep the original path for potential api-prefix switching logic below
-        original_path = path
-
-        candidates = [path]
-        snake = self._to_snake_path(path)
-        if snake != path:
-            candidates.append(snake)
-
-        last_not_found = None
-        for p in candidates:
+        try:
+            return await self._request(method, path, params=params, json=json, retries=retries)
+        except AirflowAuthError:
+            if not allow_auth_switch:
+                raise
+            curr_auth = None
             try:
-                return await self._request(method, p, params=params, json=json, retries=retries)
-            except AirflowNotFoundError as exc:
-                last_not_found = exc
-                continue
-            except AirflowAuthError as exc:
-                # Try a single auth-switch attempt: if we had auth, retry without it;
-                # if we had no auth but credentials are configured, retry with BasicAuth.
-                if allow_auth_switch:
-                    curr_auth = None
-                    try:
-                        curr_auth = getattr(self._client, "auth", None)
-                    except Exception:
-                        curr_auth = None
+                curr_auth = getattr(self._client, "auth", None)
+            except Exception:
+                curr_auth = None
 
-                    # If the current client sent auth, retry once without auth
-                    if curr_auth:
-                        try:
-                            return await self._request(method, p, params=params, json=json, retries=retries, override_auth=None)
-                        except AirflowAuthError:
-                            # fall through to raise original
-                            pass
-
-                    # If no auth was sent but we have configured credentials, try with BasicAuth
-                    if (not curr_auth) and self.username and self.password:
-                        try:
-                            return await self._request(method, p, params=params, json=json, retries=retries, override_auth=httpx.BasicAuth(self.username, self.password))
-                        except AirflowAuthError:
-                            pass
-                # If fallback didn't succeed, re-raise the original auth error
-                raise
-            except AirflowError:
-                # propagate other Airflow-related errors immediately
-                raise
-        if last_not_found:
-            # If Airflow indicates the v1 API was removed (Airflow 3+), switch
-            # to the v2 API prefix once and retry the same request. This makes
-            # the client resilient when the user did not configure
-            # AIRFLOW_VERSION correctly.
-            if allow_api_switch:
+            # If the current client sent auth, retry once without auth
+            if curr_auth:
                 try:
-                    msg = str(last_not_found)
-                except Exception:
-                    msg = ""
-                if "/api/v1" in msg and "/api/v2" in msg and self.api_prefix != "/api/v2":
-                    logger.info("Airflow indicates /api/v1 removed; switching api_prefix to /api/v2 and retrying")
-                    self.api_prefix = "/api/v2"
-                    # Replace first occurrence of /api/v1 with /api/v2 in the original path
-                    if original_path.startswith("/api/v1"):
-                        new_path = original_path.replace("/api/v1", "/api/v2", 1)
-                    else:
-                        new_path = original_path.replace("/api/v1", "/api/v2")
-                    return await self._request_with_fallback(method, new_path, params=params, json=json, retries=retries, allow_api_switch=False, allow_auth_switch=True)
-            raise last_not_found
-        # Fallback: try the original path which will raise an appropriate error
-        return await self._request(method, path, params=params, json=json, retries=retries)
+                    return await self._request(method, path, params=params, json=json, retries=retries, override_auth=None)
+                except AirflowAuthError:
+                    pass
+
+            # If no auth was sent but we have configured credentials, try with BasicAuth
+            if (not curr_auth) and self.username and self.password:
+                try:
+                    return await self._request(method, path, params=params, json=json, retries=retries, override_auth=httpx.BasicAuth(self.username, self.password))
+                except AirflowAuthError:
+                    pass
+            # Fallback didn't succeed; re-raise the original auth error
+            raise
 
     async def _request(
         self,
@@ -189,7 +144,7 @@ class AirflowClient:
         params: Optional[dict] = None,
         json: Optional[dict] = None,
         retries: int = 3,
-        override_auth: object = _UNSET,
+        override_auth: Any = _UNSET,
     ) -> Any:
         attempt = 0
         backoff = 1
@@ -224,7 +179,11 @@ class AirflowClient:
                     if not base:
                         base = self.base_url
                     timeout = getattr(self._client, "timeout", 30.0)
-                    tmp_client = httpx.AsyncClient(base_url=base, auth=override_auth, timeout=timeout)
+                    # Preserve Bearer token header when creating temporary client
+                    if getattr(self, "token", None):
+                        tmp_client = httpx.AsyncClient(base_url=base, auth=override_auth, timeout=timeout, headers={"Authorization": f"Bearer {self.token}"})
+                    else:
+                        tmp_client = httpx.AsyncClient(base_url=base, auth=override_auth, timeout=timeout)
                     resp = await tmp_client.request(method, request_target, params=params, json=json)
             except httpx.RequestError as exc:
                 # network-level error
@@ -279,7 +238,10 @@ class AirflowClient:
         return await self._request_with_fallback("GET", f"{self.api_prefix}/dags/{dag_id}")
 
     async def trigger_dag(self, dag_id: str, conf: Optional[dict] = None) -> Any:
-        payload: dict = {}
+        payload: dict[str, Any] = {
+            # Airflow 3 requires `logical_date` in DAG run creation payload.
+            "logical_date": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        }
         if conf is not None:
             payload["conf"] = conf
         return await self._request_with_fallback("POST", f"{self.api_prefix}/dags/{dag_id}/dagRuns", json=payload)
@@ -297,10 +259,42 @@ class AirflowClient:
         return []
 
     async def get_task_logs(self, dag_id: str, run_id: str, task_id: str, try_number: int = 1) -> str:
-        path = f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs"
-        resp = await self._request_with_fallback("GET", path, params={"try_number": try_number})
+        airflow3_path = f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs/{try_number}"
+        legacy_path = f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs"
+
+        try:
+            resp = await self._request_with_fallback("GET", airflow3_path)
+        except AirflowError as exc:
+            # Older API variants use `/logs?try_number=...`.
+            message = str(exc).lower()
+            if (
+                "http 404" not in message
+                and "http 405" not in message
+                and "http 422" not in message
+                and "not found" not in message
+            ):
+                raise
+            resp = await self._request_with_fallback("GET", legacy_path, params={"try_number": try_number})
+
         if isinstance(resp, dict):
-            return resp.get("content") or resp.get("logs") or ""
+            content = resp.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                lines: list[str] = []
+                for entry in content:
+                    if isinstance(entry, dict) and entry.get("event") is not None:
+                        lines.append(str(entry.get("event")))
+                    else:
+                        lines.append(str(entry))
+                return "\n".join(lines)
+
+            logs = resp.get("logs")
+            if isinstance(logs, str):
+                return logs
+            if isinstance(logs, list):
+                return "\n".join(str(item) for item in logs)
+            return ""
         return str(resp)
 
     async def list_connections(self, limit: int = 100) -> list:
@@ -325,7 +319,8 @@ class AirflowClient:
         port: Optional[int] = None,
         extra: Optional[dict] = None,
     ) -> Any:
-        payload: dict = {"connection_id": conn_id, "type": conn_type, "host": host}
+        # Airflow 3 expects `conn_type` (not `type`) in the request body.
+        payload: dict[str, Any] = {"connection_id": conn_id, "conn_type": conn_type, "host": host}
         if login is not None:
             payload["login"] = login
         if password is not None:
@@ -347,12 +342,21 @@ class AirflowClient:
     async def retry_task(self, dag_id: str, run_id: str, task_id: str) -> Any:
         """Retry a task by setting its state to `queued` via the REST API.
 
-        Note: behavior depends on Airflow version; this uses the `setState` taskInstance endpoint.
+        Airflow 3 favors `clearTaskInstances`, while older variants expose
+        `.../taskInstances/{task_id}/setState`.
         """
-        # Try both camelCase and snake_case setState endpoints to support
-        # Airflow API variations across major versions.
-        path = f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/setState"
-        return await self._request_with_fallback("POST", path, json={"state": "queued"})
+        legacy_path = f"{self.api_prefix}/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/setState"
+        try:
+            return await self._request_with_fallback("POST", legacy_path, json={"state": "queued"})
+        except AirflowError as exc:
+            # Endpoint-level incompatibility on newer API shapes (404/405)
+            # should fall back to Airflow 3 clearTaskInstances.
+            message = str(exc).lower()
+            if "http 404" not in message and "http 405" not in message and "not found" not in message:
+                raise
+
+        payload = {"dag_run_id": run_id, "task_ids": [task_id], "dry_run": False}
+        return await self._request_with_fallback("POST", f"{self.api_prefix}/dags/{dag_id}/clearTaskInstances", json=payload)
 
     async def list_variables(self, limit: int = 100) -> list:
         resp = await self._request_with_fallback("GET", f"{self.api_prefix}/variables", params={"limit": limit})
@@ -463,7 +467,7 @@ class AirflowClient:
     # Audit and config methods
     async def list_event_logs(self, limit: int = 100, dag_id: Optional[str] = None, event: Optional[str] = None) -> Any:
         """GET /eventLogs — Airflow audit trail."""
-        params = {"limit": limit}
+        params: dict[str, Any] = {"limit": limit}
         if dag_id:
             params["dag_id"] = dag_id
         if event:
@@ -490,7 +494,7 @@ class AirflowClient:
 
     async def list_dag_warnings(self, dag_id: Optional[str] = None, limit: int = 100) -> Any:
         """GET /dagWarnings"""
-        params = {"limit": limit}
+        params: dict[str, Any] = {"limit": limit}
         if dag_id:
             params["dag_id"] = dag_id
         resp = await self._request_with_fallback("GET", f"{self.api_prefix}/dagWarnings", params=params)

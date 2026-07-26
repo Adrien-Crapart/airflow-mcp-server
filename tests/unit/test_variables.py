@@ -23,6 +23,23 @@ async def test_list_variables(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_list_variables_masks_sensitive_variable_values(monkeypatch):
+    async def _fake_list(limit=100):
+        return [
+            {"key": "plain_var", "value": "visible"},
+            {"key": "secret_token", "value": "very-secret"},
+        ]
+
+    monkeypatch.setattr(_client.client, "list_variables", _fake_list)
+
+    res = await variables.list_variables({})
+
+    assert res["success"] is True
+    assert res["data"][0]["value"] == "visible"
+    assert res["data"][1]["value"] == "***MASKED***"
+
+
+@pytest.mark.asyncio
 async def test_list_variables_empty(monkeypatch):
     async def _fake_list(limit=100):
         return []
@@ -59,6 +76,20 @@ async def test_get_variable_success(monkeypatch):
     assert res["data"]["key"] == "my_key"
     assert res["data"]["value"] == "hello"
     assert res["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_variable_masks_sensitive_variable_value(monkeypatch):
+    async def _fake_get(key):
+        return {"key": key, "value": "super-secret"}
+
+    monkeypatch.setattr(_client.client, "get_variable", _fake_get)
+
+    res = await variables.get_variable({"key": "api_token"})
+
+    assert res["success"] is True
+    assert res["data"]["key"] == "api_token"
+    assert res["data"]["value"] == "***MASKED***"
 
 
 @pytest.mark.asyncio
@@ -113,6 +144,20 @@ async def test_set_variable_success(monkeypatch):
     assert res["data"]["key"] == "new_key"
     assert res["data"]["value"] == "new_value"
     assert res["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_set_variable_masks_sensitive_variable_value(monkeypatch):
+    async def _fake_set(key, value):
+        return {"key": key, "value": value}
+
+    monkeypatch.setattr(_client.client, "set_variable", _fake_set)
+
+    res = await variables.set_variable({"key": "db_password", "value": "p@ss"})
+
+    assert res["success"] is True
+    assert res["data"]["key"] == "db_password"
+    assert res["data"]["value"] == "***MASKED***"
 
 
 @pytest.mark.asyncio

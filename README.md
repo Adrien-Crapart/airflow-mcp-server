@@ -40,7 +40,7 @@ The server exposes the following MCP tools:
 - Health
 	- `airflow_health_check` — MCP server health
 - Discovery
-	- `airflow_tools_list` — list available tools (module, signature, docstring, input model)
+	- `airflow_tools_list` — list available tools (module, category, read_only, schema, examples)
 
 Detailed capability documentation is available at `docs/mcp_capabilities.md`.
 
@@ -112,8 +112,12 @@ curl -s -X POST http://localhost:8000/tool/airflow_connection_create \
 
 - `AIRFLOW_BASE_URL` (default `http://localhost:8080`)
 - `AIRFLOW_USERNAME`, `AIRFLOW_PASSWORD` (BasicAuth credentials; empty by default)
-- `AIRFLOW_VERSION` (`2` or `3`, affects `/api/v1` vs `/api/v2`, default `2`)
+- `AIRFLOW_API_TOKEN` (optional Bearer token for Airflow API)
 - `MCP_SERVER_HOST`, `MCP_SERVER_PORT` (MCP server configuration)
+- `MCP_REQUIRE_AUTH` (default `true`; protects `/tool*` and `/mcp`)
+- `MCP_AUTH_TOKEN` (optional token required for non-local clients when auth is enabled)
+- `MCP_ENABLE_ADMIN_ENDPOINTS` (default `false`; controls config/admin exposure)
+- `MCP_READ_ONLY` (default `false`; hides mutating tools when enabled)
 
 ## Tests
 
@@ -131,12 +135,23 @@ Run integration tests only (set `AIRFLOW_BASE_URL` if needed):
 ```
 
 Integration tests include a fixture that automatically falls back to an HTTP mock
-if Airflow is unreachable or requires authentication.
+only when explicitly enabled. By default, integration tests require a reachable
+real Airflow instance. Set `AIRFLOW_INTEGRATION_ALLOW_MOCK_FALLBACK=true` to
+allow mock fallback for contract-style runs.
+You can tune probe speed with `AIRFLOW_INTEGRATION_TIMEOUT_SECONDS` (default: `10`).
 
 ## CI
 
 A GitHub Actions workflow is provided at `.github/workflows/ci.yml` to run
-the test suite on multiple Python versions.
+the unit test suite on Python 3.10 and 3.11.
+
+CI now runs integration tests against a real ephemeral Airflow 3 service
+started inside the workflow:
+
+- Unit job runs only non-integration tests (`-k "not integration"`)
+- Integration job starts `apache/airflow:3.0.2` in standalone mode
+- The workflow reads the generated admin password from container logs, mints a Bearer token via `/auth/token`, and exports it as `AIRFLOW_API_TOKEN`
+- Integration tests run with `AIRFLOW_INTEGRATION_ALLOW_MOCK_FALLBACK=false`
 
 ## Contributing / adding a tool
 
