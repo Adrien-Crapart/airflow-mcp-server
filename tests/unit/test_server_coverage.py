@@ -442,6 +442,32 @@ def test_health_endpoint(client):
     assert response.json() == {"status": "ok"}
 
 
+def test_ready_endpoint_success(monkeypatch, client):
+    async def _fake_health():
+        return {"metadatabase": {"status": "healthy"}}
+
+    monkeypatch.setattr(airflow_client_module.client, "get_health", _fake_health)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["airflow"]["metadatabase"]["status"] == "healthy"
+
+
+def test_ready_endpoint_failure_returns_503(monkeypatch, client):
+    async def _raise():
+        raise AirflowConnectionError("airflow unreachable")
+
+    monkeypatch.setattr(airflow_client_module.client, "get_health", _raise)
+
+    response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not_ready", "error": "airflow unreachable"}
+
+
 def test_invoke_tool_success_no_schema(client):
     response = client.post("/tool/airflow_health_check", json={})
 

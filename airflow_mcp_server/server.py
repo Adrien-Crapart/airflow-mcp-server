@@ -214,6 +214,8 @@ def create_app() -> FastAPI:
         AirflowConflictError,
         AirflowServerError,
         AirflowConnectionError,
+        AirflowError,
+        client as airflow_client,
     )
 
     app = FastAPI(title="Airflow MCP Server")
@@ -377,6 +379,24 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    @app.get("/ready")
+    async def ready():
+        """Readiness endpoint validating Airflow reachability."""
+        try:
+            airflow_status = await airflow_client.get_health()
+            return {"status": "ready", "airflow": airflow_status}
+        except (
+            AirflowAuthError,
+            AirflowPermissionError,
+            AirflowNotFoundError,
+            AirflowConflictError,
+            AirflowConnectionError,
+            AirflowServerError,
+            AirflowError,
+        ) as exc:
+            logger.warning("Readiness check failed: %s", exc)
+            return _make_response({"status": "not_ready", "error": str(exc)}, 503)
 
     logger.info("Loaded tools: %s", sorted(list(tools.keys())))
     return app

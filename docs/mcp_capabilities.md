@@ -17,6 +17,8 @@ The MCP server exposes tools to control Apache Airflow via HTTP. Main features:
 
 - `POST /tool/{tool_name}` — Main route to invoke a tool. Body: `{ "params": {...} }`.
 - `POST /tool` — Fallback that accepts `{ "tool_name": "...", "params": {...} }`.
+- `GET /health` — Liveness endpoint for the MCP API process.
+- `GET /ready` — Readiness endpoint validating Airflow connectivity.
 - Interactive documentation (OpenAPI / Swagger): `GET /docs`.
 
 All responses return a `ToolResponse`:
@@ -97,8 +99,10 @@ curl -s -X POST http://localhost:8000/tool/airflow_tools_list \
 ## Behavior and compatibility
 
 - The Airflow client targets Airflow 3.x exclusively via `/api/v2`.
+- `get_health()` probes `/api/v2/monitor/health` and falls back to `/api/v2/health`.
 - The client applies a retry/backoff strategy and converts HTTP errors
   into specific exceptions (`AirflowAuthError`, `AirflowConnectionError`, ...).
+- `MCP_TRANSPORT` controls protocol exposure: `stdio`, `http`, or `both`.
 
 ## Environment variables
 

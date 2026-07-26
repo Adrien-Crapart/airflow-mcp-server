@@ -18,6 +18,7 @@ from airflow_mcp_server.airflow_client import (
     AirflowClient,
     AirflowConnectionError,
     AirflowError,
+    AirflowNotFoundError,
 )
 from airflow_mcp_server.config import cfg
 
@@ -601,6 +602,54 @@ async def test_get_version_success():
         client = AirflowClient(http_client=ac)
         result = await client.get_version()
         assert result["version"] == "3.0.0"
+
+
+@pytest.mark.asyncio
+async def test_get_health_uses_monitor_endpoint_when_available():
+    def handler(request):
+        assert request.url.path == "/api/v2/monitor/health"
+        return httpx.Response(200, json={"metadatabase": {"status": "healthy"}})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        client = AirflowClient(http_client=ac)
+        result = await client.get_health()
+        assert result["metadatabase"]["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_get_health_falls_back_to_legacy_health_endpoint():
+    calls = {"count": 0}
+
+    def handler(request):
+        calls["count"] += 1
+        if request.url.path == "/api/v2/monitor/health":
+            return httpx.Response(404, json={"detail": "not found"})
+        assert request.url.path == "/api/v2/health"
+        return httpx.Response(200, json={"status": "healthy"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        client = AirflowClient(http_client=ac)
+        result = await client.get_health()
+        assert result["status"] == "healthy"
+        assert calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_health_raises_not_found_when_both_endpoints_absent(monkeypatch):
+    client = AirflowClient(base_url="http://test")
+
+    async def _fake_request_with_fallback(method, path, params=None, json=None, retries=3, allow_auth_switch=True):
+        raise AirflowNotFoundError(f"not found on {path}")
+
+    monkeypatch.setattr(client, "_request_with_fallback", _fake_request_with_fallback)
+
+    try:
+        with pytest.raises(AirflowNotFoundError):
+            await client.get_health()
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio

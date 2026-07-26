@@ -1,10 +1,66 @@
 services:
+  traefik:
+    image: traefik:v3.1
+    profiles: ["edge"]
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-ops@example.com}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --api.dashboard=false
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    restart: unless-stopped
+
   mcp:
     build: .
     ports:
-      - "8000:8000"
+      - "${MCP_PORT_BIND:-127.0.0.1:8000}:8000"
     environment:
       - AIRFLOW_BASE_URL=${AIRFLOW_BASE_URL:-http://host.docker.internal:8080}
       - AIRFLOW_USERNAME=${AIRFLOW_USERNAME:-airflow}
       - AIRFLOW_PASSWORD=${AIRFLOW_PASSWORD:-airflow}
+      - AIRFLOW_API_TOKEN=${AIRFLOW_API_TOKEN:-}
+      - MCP_REQUIRE_AUTH=${MCP_REQUIRE_AUTH:-true}
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      - MCP_ENABLE_ADMIN_ENDPOINTS=${MCP_ENABLE_ADMIN_ENDPOINTS:-false}
+      - MCP_READ_ONLY=${MCP_READ_ONLY:-false}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-both}
+      - MCP_SERVER_HOST=${MCP_SERVER_HOST:-0.0.0.0}
+      - MCP_SERVER_PORT=${MCP_SERVER_PORT:-8000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json,sys,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5); data=json.loads(r.read().decode()); sys.exit(0 if r.status==200 and data.get('status')=='ready' else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - traefik.enable=${TRAEFIK_ENABLE:-false}
+      - traefik.http.routers.airflow-mcp.rule=Host(`${MCP_PUBLIC_HOST:-localhost}`)
+      - traefik.http.routers.airflow-mcp.entrypoints=websecure
+      - traefik.http.routers.airflow-mcp.tls=true
+      - traefik.http.routers.airflow-mcp.tls.certresolver=letsencrypt
+      - traefik.http.services.airflow-mcp.loadbalancer.server.port=8000
+      - traefik.http.middlewares.airflow-mcp-ratelimit.ratelimit.average=${RATE_LIMIT_AVERAGE:-20}
+      - traefik.http.middlewares.airflow-mcp-ratelimit.ratelimit.burst=${RATE_LIMIT_BURST:-40}
+      - traefik.http.routers.airflow-mcp.middlewares=airflow-mcp-ratelimit
     restart: unless-stopped
+
+volumes:
+  traefik_letsencrypt:

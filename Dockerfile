@@ -21,5 +21,5 @@ EXPOSE 8000
 
 ENV AIRFLOW_BASE_URL=http://airflow-webserver:8080
 
-# Start FastAPI app via uvicorn using the application factory
-CMD ["uvicorn", "airflow_mcp_server.server:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+# Start the unified launcher so MCP_TRANSPORT (stdio/http/both) is honored.
+CMD ["python", "-m", "airflow_mcp_server.main"]

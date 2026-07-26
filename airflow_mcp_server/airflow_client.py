@@ -502,6 +502,17 @@ class AirflowClient:
             return resp.get("dag_warnings") or resp.get("warnings") or []
         return []
 
+    async def get_health(self) -> Any:
+        """GET Airflow health details.
+
+        Airflow 3.x exposes `/api/v2/monitor/health`. Some deployments may
+        still expose `/api/v2/health`, so we keep a compatibility fallback.
+        """
+        try:
+            return await self._request_with_fallback("GET", f"{self.api_prefix}/monitor/health")
+        except AirflowNotFoundError:
+            return await self._request_with_fallback("GET", f"{self.api_prefix}/health")
+
     async def close(self) -> None:
         await self._client.aclose()
 
