@@ -1,4 +1,5 @@
 import pytest
+from uuid import uuid4
 
 pytestmark = pytest.mark.integration
 
@@ -68,10 +69,12 @@ async def test_get_task_logs(airflow_client):
 @pytest.mark.asyncio
 async def test_create_connection(airflow_client):
     client = airflow_client
-    res = await client.create_connection("my_conn", "http", "host", login="u", password="p", port=123)
+    conn_id = f"my_conn_{uuid4().hex[:8]}"
+    res = await client.create_connection(conn_id, "http", "host", login="u", password="p", port=123)
     assert res is not None
     if isinstance(res, dict):
         assert "connection_id" in res
+        assert res["connection_id"] == conn_id
 
 
 @pytest.mark.asyncio
@@ -92,5 +95,32 @@ async def test_pause_unpause_and_retry(airflow_client):
     assert res is not None
     res2 = await client.unpause_dag(dag_id)
     assert res2 is not None
-    retry_res = await client.retry_task(dag_id, "manual__1", "task_1")
+
+    runs = await client.list_dag_runs(dag_id)
+    if not runs:
+        pytest.skip("No DAG runs available for retry test")
+
+    run_id = None
+    if isinstance(runs, list) and runs:
+        first_run = runs[0]
+        if isinstance(first_run, dict):
+            run_id = first_run.get("dag_run_id") or first_run.get("run_id")
+
+    if not run_id:
+        pytest.skip("No run id found for retry test")
+
+    tasks = await client.get_task_instances(dag_id, run_id)
+    if not tasks:
+        pytest.skip("No task instances available for retry test")
+
+    task_id = None
+    if isinstance(tasks, list) and tasks:
+        first_task = tasks[0]
+        if isinstance(first_task, dict):
+            task_id = first_task.get("task_id")
+
+    if not task_id:
+        pytest.skip("No task id found for retry test")
+
+    retry_res = await client.retry_task(dag_id, run_id, task_id)
     assert retry_res is not None

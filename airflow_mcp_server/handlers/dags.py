@@ -1,4 +1,3 @@
-from typing import Any
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
     ToolResponse,
@@ -12,7 +11,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_dags(params: dict) -> ToolResponse:
+async def list_dags(params: dict) -> dict:
     """List all available DAGs.
 
     Args:
@@ -32,7 +31,7 @@ async def list_dags(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=dags, error=None).model_dump()
 
 
-async def get_dag(params: dict) -> ToolResponse:
+async def get_dag(params: dict) -> dict:
     """Get details of a specific DAG.
 
     Args:
@@ -52,7 +51,7 @@ async def get_dag(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=dag, error=None).model_dump()
 
 
-async def trigger_dag(params: dict) -> ToolResponse:
+async def trigger_dag(params: dict) -> dict:
     """Trigger a DAG run.
 
     Args:
@@ -73,7 +72,7 @@ async def trigger_dag(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def list_dag_runs(params: dict) -> ToolResponse:
+async def list_dag_runs(params: dict) -> dict:
     """List all runs of a specific DAG.
 
     Args:
@@ -102,7 +101,7 @@ TOOLS = {
 }
 
 
-async def pause_dag(params: dict) -> ToolResponse:
+async def pause_dag(params: dict) -> dict:
     """Pause a DAG to prevent automatic scheduling.
 
     Args:
@@ -122,7 +121,7 @@ async def pause_dag(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def unpause_dag(params: dict) -> ToolResponse:
+async def unpause_dag(params: dict) -> dict:
     """Resume a paused DAG to enable automatic scheduling.
 
     Args:
@@ -142,7 +141,7 @@ async def unpause_dag(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def get_dag_source(params: dict) -> ToolResponse:
+async def get_dag_source(params: dict) -> dict:
     """Retrieve the source code of a DAG.
 
     Fetches the DAG metadata first to obtain the file_token, then retrieves
@@ -169,7 +168,7 @@ async def get_dag_source(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=source, error=None).model_dump()
 
 
-async def get_dag_run(params: dict) -> ToolResponse:
+async def get_dag_run(params: dict) -> dict:
     """Fetch details of a specific DAG run.
 
     Args:
@@ -190,7 +189,7 @@ async def get_dag_run(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=run, error=None).model_dump()
 
 
-async def clear_dag_run(params: dict) -> ToolResponse:
+async def clear_dag_run(params: dict) -> dict:
     """Clear/re-run a DAG run from scratch or from failed tasks.
 
     Args:
@@ -212,7 +211,7 @@ async def clear_dag_run(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def cancel_dag_run(params: dict) -> ToolResponse:
+async def cancel_dag_run(params: dict) -> dict:
     """Cancel/delete a running DAG run.
 
     Args:
@@ -233,7 +232,7 @@ async def cancel_dag_run(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def set_dag_run_state(params: dict) -> ToolResponse:
+async def set_dag_run_state(params: dict) -> dict:
     """Update the state of a DAG run (mark as success, failed, queued, etc.).
 
     Args:

@@ -1,5 +1,5 @@
 from typing import Optional, Any, Dict
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 
 class ToolResponse(BaseModel):
@@ -190,7 +190,7 @@ class GetConfigParams(BaseModel):
 
 
 # Mapping tool_name -> pydantic model used to validate `params` dict
-TOOL_INPUT_MODELS: Dict[str, type] = {
+TOOL_INPUT_MODELS: Dict[str, type[BaseModel]] = {
     "airflow_dag_list": ListDagsParams,
     "airflow_dag_get": DagIdParams,
     "airflow_dag_trigger": TriggerDagParams,

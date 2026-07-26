@@ -1,4 +1,3 @@
-from typing import Any
 
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
@@ -9,7 +8,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_pools(params: dict) -> ToolResponse:
+async def list_pools(params: dict) -> dict:
     """List all Airflow pools.
 
     Args:
@@ -27,7 +26,7 @@ async def list_pools(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=pools, error=None).model_dump()
 
 
-async def get_pool(params: dict) -> ToolResponse:
+async def get_pool(params: dict) -> dict:
     """Retrieve an Airflow pool by name.
 
     Args:
@@ -47,7 +46,7 @@ async def get_pool(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=pool, error=None).model_dump()
 
 
-async def set_pool(params: dict) -> ToolResponse:
+async def set_pool(params: dict) -> dict:
     """Create or update an Airflow pool.
 
     Args:

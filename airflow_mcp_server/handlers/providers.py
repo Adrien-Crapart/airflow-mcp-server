@@ -1,4 +1,3 @@
-from typing import Any
 
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
@@ -8,7 +7,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_providers(params: dict) -> ToolResponse:
+async def list_providers(params: dict) -> dict:
     """List all installed Airflow providers.
 
     Providers extend Airflow with operators, hooks, and connections for
@@ -29,7 +28,7 @@ async def list_providers(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=providers, error=None).model_dump()
 
 
-async def list_plugins(params: dict) -> ToolResponse:
+async def list_plugins(params: dict) -> dict:
     """List all active Airflow plugins.
 
     Plugins extend Airflow with custom views, operators, hooks, etc.

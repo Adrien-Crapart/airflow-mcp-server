@@ -197,15 +197,15 @@ LOG_LEVEL=INFO
 - Always check HTTP status before parsing JSON
 - Return structured data (dict/list) or raise with context
 
-**Common Endpoints**:
+**Common Endpoints** (Airflow 3.x only — `/api/v2`):
 ```
-GET  /api/v1/dags                    # List DAGs
-GET  /api/v1/dags/{dag_id}          # Get DAG
-POST /api/v1/dags/{dag_id}/dagRuns  # Trigger DAG
-GET  /api/v1/dags/{dag_id}/dagRuns  # List runs
-GET  /api/v1/dags/{dag_id}/dagRuns/{run_id}/taskInstances  # Task instances
-POST /api/v1/connections            # Create/update connection
-GET  /api/v1/variables              # List variables
+GET  /api/v2/dags                    # List DAGs
+GET  /api/v2/dags/{dag_id}          # Get DAG
+POST /api/v2/dags/{dag_id}/dagRuns  # Trigger DAG
+GET  /api/v2/dags/{dag_id}/dagRuns  # List runs
+GET  /api/v2/dags/{dag_id}/dagRuns/{run_id}/taskInstances  # Task instances
+POST /api/v2/connections            # Create/update connection
+GET  /api/v2/variables              # List variables
 ```
 
 ### Response Schemas (`models.py`)
@@ -280,7 +280,7 @@ curl -X PUT http://localhost:8000/tool/airflow_dag_list \
 
 **Inspect Airflow REST responses**:
 ```bash
-curl -u airflow:airflow http://localhost:8080/api/v1/dags | jq .
+curl -u airflow:airflow http://localhost:8080/api/v2/dags | jq .
 ```
 
 ---

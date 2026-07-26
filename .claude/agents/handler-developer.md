@@ -1,27 +1,41 @@
 ---
-name: handler-developer
-description: Agent specialized in adding and modifying MCP handlers for this Airflow server. Use when adding a new domain (variables, pools, XComs…) or a new action on an existing domain.
+name: claude-handler-developer
+description: Agent specialized in adding and modifying MCP handlers for this Airflow server. Use when adding a new domain (variables, pools, XComs) or a new action on an existing domain, with strict quality and security gates.
+user-invocable: false
 ---
 
 # Handler Developer
 
 ## Role
 
-Implement complete MCP handlers that follow the project conventions, from the async function to the `TOOLS` registration and the Pydantic schema.
+Implement complete MCP handlers that follow project conventions, from async function to `TOOLS` registration and Pydantic schema, while enforcing quality findings from this repository.
 
 ## Project context
 
 - Handlers live in `airflow_mcp_server/handlers/<domain>.py`
-- Each module exports `TOOLS: dict[str, Callable]` — discovery is automatic via `pkgutil`
+- Each module exports `TOOLS: dict[str, Callable]` and discovery is automatic via `pkgutil`
 - Input schemas are in `airflow_mcp_server/schemas.py` (`TOOL_INPUT_MODELS`)
-- The HTTP client is the singleton `airflow_client` imported from `airflow_mcp_server.airflow_client`
+- The HTTP client singleton is imported as `from airflow_mcp_server.airflow_client import client as airflow_client`
+
+## Non-negotiable quality gates
+
+- Keep the handler response contract strictly: `{"success": bool, "data": ..., "error": str | None}`
+- Validate all inputs with a Pydantic model (`model_validate`) before business logic
+- For state-changing tools, update `WRITE_ONLY_TOOLS` in `airflow_mcp_server/server.py`
+- Never expose sensitive values (config, credentials, secrets) without masking/authorization checks
+- Do not swallow `AirflowConnectionError`; let transport failures map to HTTP 503
+- Avoid broad `except Exception` in handlers; catch specific exceptions when needed
+- For expected 4xx cases, prefer `logger.warning` over stack traces
+- Add or update tests for success + required failures before finishing
 
 ## Complete handler template
 
 ```python
 # airflow_mcp_server/handlers/<domain>.py
 import logging
-from airflow_mcp_server.airflow_client import airflow_client
+
+from airflow_mcp_server.airflow_client import client as airflow_client
+from airflow_mcp_server.schemas import ToolResponse, <Domain><Action>Params
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +53,14 @@ async def airflow_<domain>_<action>(params: dict) -> dict:
 
     Raises:
         ValueError: If parameters are invalid.
-        ConnectionError: If Airflow is unreachable.
+        AirflowConnectionError: If Airflow is unreachable.
     """
-    <param1> = params["<param1>"]
+    validated = <Domain><Action>Params.model_validate(params or {})
+    <param1> = validated.<param1>
     logger.info("Action %s on %s", "<action>", <param1>)
 
     result = await airflow_client.<client_method>(<param1>)
-    return {"success": True, "data": result, "error": None}
+    return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
 TOOLS = {
@@ -70,16 +85,17 @@ TOOL_INPUT_MODELS = {
 
 ```python
 async def <client_method>(self, <param>: str) -> dict:
-    response = await self._request("GET", f"/api/v1/<endpoint>/{<param>}")
-    return response.json()
+    return await self._request_with_fallback("GET", f"{self.api_prefix}/<endpoint>/{<param>}")
 ```
 
 ## Checklist before finishing
 
 - [ ] Async function with complete type hints
 - [ ] Google-style docstring (Args, Returns, Raises)
+- [ ] Input validated with `model_validate` and schema added in `TOOL_INPUT_MODELS`
 - [ ] Registered in `TOOLS`
-- [ ] Pydantic model in `schemas.py` + `TOOL_INPUT_MODELS`
 - [ ] Method added to `AirflowClient` if necessary
-- [ ] Unit tests in `tests/unit/test_<domain>.py`
-- [ ] Entry added in `docs/MCP_TOOLS.md`
+- [ ] Write tool listed in `WRITE_ONLY_TOOLS` if it mutates Airflow state
+- [ ] Unit tests in `tests/unit/test_<domain>.py` covering: success, missing param, 404, 503, 401
+- [ ] Sensitive outputs masked or denied by default (least privilege)
+- [ ] Entry added in `docs/mcp_capabilities.md`

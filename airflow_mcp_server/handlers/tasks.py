@@ -1,4 +1,3 @@
-from typing import Any
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
     ToolResponse,
@@ -11,7 +10,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_task_instances(params: dict) -> ToolResponse:
+async def list_task_instances(params: dict) -> dict:
     """List all task instances in a DAG run.
 
     Args:
@@ -37,7 +36,7 @@ TOOLS = {
 }
 
 
-async def retry_task(params: dict) -> ToolResponse:
+async def retry_task(params: dict) -> dict:
     """Retry a failed task in a DAG run.
 
     Args:
@@ -59,7 +58,7 @@ async def retry_task(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def list_tasks(params: dict) -> ToolResponse:
+async def list_tasks(params: dict) -> dict:
     """List all task definitions in a DAG.
 
     Returns the task structure/definitions, not task instances.
@@ -81,7 +80,7 @@ async def list_tasks(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=tasks, error=None).model_dump()
 
 
-async def get_task(params: dict) -> ToolResponse:
+async def get_task(params: dict) -> dict:
     """Get a specific task definition from a DAG.
 
     Args:
@@ -102,7 +101,7 @@ async def get_task(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=task, error=None).model_dump()
 
 
-async def set_task_state(params: dict) -> ToolResponse:
+async def set_task_state(params: dict) -> dict:
     """Update the state of a task instance.
 
     Args:
@@ -125,7 +124,7 @@ async def set_task_state(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def clear_task(params: dict) -> ToolResponse:
+async def clear_task(params: dict) -> dict:
     """Clear a task instance to force re-run.
 
     Args:

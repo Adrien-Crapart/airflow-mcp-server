@@ -20,6 +20,7 @@ include = ["airflow_mcp_server*"]
 dev = [
   "pytest>=7.0",
   "pytest-asyncio",
+  "pytest-cov>=7.1.0",
   "ruff",
   "mypy",
   "asgi-lifespan",
@@ -31,5 +32,23 @@ build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
-    "pytest-cov>=7.1.0",
+  "pytest>=7.0",
+  "pytest-asyncio",
+  "pytest-cov>=7.1.0",
+  "ruff",
+  "mypy",
+  "asgi-lifespan",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+  "integration: marks tests as integration tests that require a running Airflow instance",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 200
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true

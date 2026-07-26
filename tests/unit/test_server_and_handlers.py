@@ -1,6 +1,6 @@
 import pytest
 
-from airflow_mcp_server.server import create_app, load_tools
+from airflow_mcp_server.server import load_tools
 import airflow_mcp_server.airflow_client as _client
 from airflow_mcp_server.handlers import connections, logs, tasks, discovery
 

@@ -4,11 +4,10 @@ from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
     ToolResponse,
     DiagnoseDagRunParams,
-    SystemHealthParams,
 )
 
 
-async def diagnose_dag_run(params: dict) -> ToolResponse:
+async def diagnose_dag_run(params: dict) -> dict:
     """Diagnose a DAG run by aggregating status, failed tasks, and logs.
 
     This tool combines multiple API calls into one, reducing LLM iterations.
@@ -73,7 +72,7 @@ async def diagnose_dag_run(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=result, error=None).model_dump()
 
 
-async def system_health(params: dict) -> ToolResponse:
+async def system_health(params: dict) -> dict:
     """Get a health overview of the Airflow system.
 
     Aggregates health status, import errors, and pool usage in one call.
@@ -92,7 +91,7 @@ async def system_health(params: dict) -> ToolResponse:
     Raises:
         AirflowConnectionError: If Airflow is unreachable.
     """
-    result = {}
+    result: dict[str, Any] = {}
 
     try:
         # Attempt to get health status (generic endpoint)
@@ -105,14 +104,14 @@ async def system_health(params: dict) -> ToolResponse:
         # Get import errors
         errors = await airflow_client.list_import_errors(limit=50)
         result["import_errors"] = errors
-    except Exception as e:
+    except Exception:
         result["import_errors"] = []
 
     try:
         # Get pool stats
         pools = await airflow_client.list_pools(limit=100)
         result["pools"] = pools
-    except Exception as e:
+    except Exception:
         result["pools"] = []
 
     return ToolResponse(success=True, data=result, error=None).model_dump()

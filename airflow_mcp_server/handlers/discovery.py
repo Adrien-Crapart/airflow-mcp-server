@@ -1,8 +1,8 @@
 import pkgutil
 import importlib
-import inspect
 from typing import Any, Dict, List
 
+from airflow_mcp_server.config import cfg
 from airflow_mcp_server.schemas import ToolResponse, TOOL_INPUT_MODELS
 
 
@@ -23,6 +23,11 @@ TOOL_CATEGORIES = {
     "discovery": "meta",
     "event_logs": "audit",
     "config": "admin",
+}
+
+# Sensitive admin tools hidden unless explicitly enabled.
+ADMIN_ONLY_TOOLS = {
+    "airflow_config_get",
 }
 
 # Tools that are read-only (don't modify state)
@@ -144,7 +149,7 @@ def _get_tool_info(tool_name: str, handler: Any, module_name: str) -> Dict[str, 
     return info
 
 
-async def list_tools(params: dict) -> ToolResponse:
+async def list_tools(params: dict) -> dict:
     """Return a list of available MCP tools with full metadata.
 
     For each tool, includes: name, module, category, read_only flag, description,
@@ -172,13 +177,15 @@ async def list_tools(params: dict) -> ToolResponse:
             continue
         mod_tools = getattr(mod, "TOOLS", {}) or {}
         for tname, handler in mod_tools.items():
+            if not cfg.MCP_ENABLE_ADMIN_ENDPOINTS and tname in ADMIN_ONLY_TOOLS:
+                continue
             info = _get_tool_info(tname, handler, name)
             tools.append(info)
 
     return ToolResponse(success=True, data=tools, error=None).model_dump()
 
 
-async def get_tool(params: dict) -> ToolResponse:
+async def get_tool(params: dict) -> dict:
     """Fetch full schema and metadata for a single tool.
 
     Faster than parsing all of list_tools when you only need one tool's schema.
@@ -211,6 +218,8 @@ async def get_tool(params: dict) -> ToolResponse:
             continue
         mod_tools = getattr(mod, "TOOLS", {}) or {}
         if tool_name in mod_tools:
+            if not cfg.MCP_ENABLE_ADMIN_ENDPOINTS and tool_name in ADMIN_ONLY_TOOLS:
+                break
             handler = mod_tools[tool_name]
             info = _get_tool_info(tool_name, handler, name)
             return ToolResponse(success=True, data=info, error=None).model_dump()

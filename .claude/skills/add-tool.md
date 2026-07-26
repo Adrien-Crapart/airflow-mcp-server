@@ -37,8 +37,7 @@ If the Airflow endpoint is not yet wrapped:
 
 ```python
 async def <method>(self, <param>: str) -> dict:
-    response = await self._request("GET", f"/api/v1/<endpoint>/{<param>}")
-    return response.json()
+    return await self._request_with_fallback("GET", f"{self.api_prefix}/<endpoint>/{<param>}")
 ```
 
 ### 4. Tests (`tests/unit/test_<domain>.py`)

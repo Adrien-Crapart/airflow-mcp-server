@@ -1,8 +1,7 @@
 # Justfile — common dev tasks for Airflow MCP Server
 # Requires: just (https://github.com/casey/just)
 
-# Use bash so commands behave consistently on CI
-set shell := ["bash", "-cu"]
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 uv_sync:
 	uv sync
@@ -23,7 +22,7 @@ lock:
 	uv lock
 
 hooks:
-	bash hooks/install.sh
+	sh hooks/install.sh
 
 help:
 	echo "Commands: uv_sync, run, test, lint, format, lock, hooks"

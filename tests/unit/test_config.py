@@ -3,10 +3,21 @@ import pytest
 import airflow_mcp_server.airflow_client as _client
 from airflow_mcp_server.handlers import config
 from airflow_mcp_server.airflow_client import AirflowPermissionError, AirflowConnectionError
+from airflow_mcp_server.config import cfg
+
+
+@pytest.mark.asyncio
+async def test_get_config_disabled_by_policy(monkeypatch):
+    monkeypatch.setattr(cfg, "MCP_ENABLE_ADMIN_ENDPOINTS", False)
+
+    with pytest.raises(AirflowPermissionError, match="disabled"):
+        await config.get_config({})
 
 
 @pytest.mark.asyncio
 async def test_get_config_success(monkeypatch):
+    monkeypatch.setattr(cfg, "MCP_ENABLE_ADMIN_ENDPOINTS", True)
+
     async def _fake_get_config(section=None):
         if section == "core":
             return {"dags_folder": "/opt/airflow/dags", "parallelism": 32}
@@ -20,6 +31,8 @@ async def test_get_config_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_config_filtered_section(monkeypatch):
+    monkeypatch.setattr(cfg, "MCP_ENABLE_ADMIN_ENDPOINTS", True)
+
     async def _fake_get_config(section=None):
         if section == "core":
             return {"dags_folder": "/opt/airflow/dags", "parallelism": 32}
@@ -31,7 +44,23 @@ async def test_get_config_filtered_section(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_config_masks_sensitive_values(monkeypatch):
+    monkeypatch.setattr(cfg, "MCP_ENABLE_ADMIN_ENDPOINTS", True)
+
+    async def _fake_get_config(section=None):
+        return {"core": {"fernet_key": "abc", "parallelism": 32}}
+
+    monkeypatch.setattr(_client.client, "get_config", _fake_get_config)
+    res = await config.get_config({})
+
+    assert res["success"] is True
+    assert res["data"]["core"]["fernet_key"] == "***MASKED***"
+
+
+@pytest.mark.asyncio
 async def test_get_config_permission_error(monkeypatch):
+    monkeypatch.setattr(cfg, "MCP_ENABLE_ADMIN_ENDPOINTS", True)
+
     async def _fake_get_config(section=None):
         raise AirflowPermissionError("forbidden")
 
@@ -42,6 +71,8 @@ async def test_get_config_permission_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_config_connection_error(monkeypatch):
+    monkeypatch.setattr(cfg, "MCP_ENABLE_ADMIN_ENDPOINTS", True)
+
     async def _fake_get_config(section=None):
         raise AirflowConnectionError("connection failed")
 

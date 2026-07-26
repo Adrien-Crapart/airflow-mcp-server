@@ -1,6 +1,8 @@
+import re
 from typing import Any
 
-from airflow_mcp_server.airflow_client import client as airflow_client
+from airflow_mcp_server.airflow_client import AirflowPermissionError, client as airflow_client
+from airflow_mcp_server.config import cfg
 from airflow_mcp_server.schemas import (
     ToolResponse,
     GetConfigParams,
@@ -8,7 +10,29 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def get_config(params: dict) -> ToolResponse:
+SENSITIVE_CONFIG_KEY_RE = re.compile(
+    r"(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|fernet|sql_alchemy_conn|broker_url|result_backend|credential|client[_-]?secret|jwt)",
+    re.IGNORECASE,
+)
+
+
+def _mask_sensitive_config(value: Any) -> Any:
+    """Recursively mask sensitive configuration keys."""
+    if isinstance(value, dict):
+        masked: dict[Any, Any] = {}
+        for key, nested in value.items():
+            key_text = str(key)
+            if SENSITIVE_CONFIG_KEY_RE.search(key_text):
+                masked[key] = "***MASKED***"
+            else:
+                masked[key] = _mask_sensitive_config(nested)
+        return masked
+    if isinstance(value, list):
+        return [_mask_sensitive_config(item) for item in value]
+    return value
+
+
+async def get_config(params: dict) -> dict:
     """Retrieve Airflow configuration.
 
     Returns the complete Airflow configuration dictionary. May require admin permissions.
@@ -21,15 +45,19 @@ async def get_config(params: dict) -> ToolResponse:
         {"success": True, "data": {config dict or filtered section}, "error": None}
 
     Raises:
+        AirflowPermissionError: If admin config access is disabled by server policy.
         AirflowPermissionError: If user lacks admin permissions (HTTP 403).
         AirflowConnectionError: If Airflow is unreachable.
     """
+    if not cfg.MCP_ENABLE_ADMIN_ENDPOINTS:
+        raise AirflowPermissionError("Admin config endpoint is disabled by server policy")
+
     validated = GetConfigParams.model_validate(params or {})
     config = await airflow_client.get_config(section=validated.section)
-    return ToolResponse(success=True, data=config, error=None).model_dump()
+    return ToolResponse(success=True, data=_mask_sensitive_config(config), error=None).model_dump()
 
 
-async def get_version(params: dict) -> ToolResponse:
+async def get_version(params: dict) -> dict:
     """Get Airflow version and metadata.
 
     Returns version string, git commit hash, and other build information.
@@ -47,7 +75,7 @@ async def get_version(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=version, error=None).model_dump()
 
 
-async def list_dag_warnings(params: dict) -> ToolResponse:
+async def list_dag_warnings(params: dict) -> dict:
     """List DAG warnings (SLA misses, import warnings, etc.).
 
     Useful for monitoring DAG health and configuration issues.

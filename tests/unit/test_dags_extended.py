@@ -137,3 +137,105 @@ async def test_list_dag_runs_respects_limit(monkeypatch):
 
     assert received["dag_id"] == "my_dag"
     assert received["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_trigger_dag_success(monkeypatch):
+    async def _fake_trigger(dag_id, conf=None):
+        return {"dag_run_id": "manual__2026-01-01T00:00:00+00:00", "state": "queued"}
+
+    monkeypatch.setattr(_client.client, "trigger_dag", _fake_trigger)
+
+    res = await dags.trigger_dag({"dag_id": "my_dag"})
+
+    assert res["success"] is True
+    assert res["data"]["dag_run_id"] == "manual__2026-01-01T00:00:00+00:00"
+    assert res["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_trigger_dag_passes_conf(monkeypatch):
+    received = {}
+
+    async def _fake_trigger(dag_id, conf=None):
+        received["dag_id"] = dag_id
+        received["conf"] = conf
+        return {"dag_run_id": "run_1", "state": "queued"}
+
+    monkeypatch.setattr(_client.client, "trigger_dag", _fake_trigger)
+
+    await dags.trigger_dag({"dag_id": "my_dag", "conf": {"key": "value"}})
+
+    assert received["dag_id"] == "my_dag"
+    assert received["conf"] == {"key": "value"}
+
+
+@pytest.mark.asyncio
+async def test_trigger_dag_missing_id():
+    with pytest.raises(Exception):
+        await dags.trigger_dag({})
+
+
+@pytest.mark.asyncio
+async def test_trigger_dag_not_found(monkeypatch):
+    async def _fake_trigger(dag_id, conf=None):
+        raise AirflowNotFoundError("dag not found")
+
+    monkeypatch.setattr(_client.client, "trigger_dag", _fake_trigger)
+
+    with pytest.raises(AirflowNotFoundError):
+        await dags.trigger_dag({"dag_id": "nonexistent_dag"})
+
+
+@pytest.mark.asyncio
+async def test_trigger_dag_connection_error(monkeypatch):
+    async def _fake_trigger(dag_id, conf=None):
+        raise AirflowConnectionError("unreachable")
+
+    monkeypatch.setattr(_client.client, "trigger_dag", _fake_trigger)
+
+    with pytest.raises(AirflowConnectionError):
+        await dags.trigger_dag({"dag_id": "my_dag"})
+
+
+@pytest.mark.asyncio
+async def test_get_dag_source_no_file_token_skips_source_call(monkeypatch):
+    async def _fake_get(dag_id):
+        return {"dag_id": dag_id, "is_paused": False}
+
+    async def _fake_get_source(file_token):
+        raise AssertionError("get_dag_source must not be called without a file_token")
+
+    monkeypatch.setattr(_client.client, "get_dag", _fake_get)
+    monkeypatch.setattr(_client.client, "get_dag_source", _fake_get_source)
+
+    res = await dags.get_dag_source({"dag_id": "my_dag"})
+
+    assert res["success"] is False
+    assert res["data"] is None
+    assert res["error"] == "file_token not available for this DAG"
+
+
+@pytest.mark.asyncio
+async def test_get_dag_source_with_file_token_calls_source(monkeypatch):
+    async def _fake_get(dag_id):
+        return {"dag_id": dag_id, "file_token": "token123"}
+
+    async def _fake_get_source(file_token):
+        assert file_token == "token123"
+        return "from airflow import DAG\n# source"
+
+    monkeypatch.setattr(_client.client, "get_dag", _fake_get)
+    monkeypatch.setattr(_client.client, "get_dag_source", _fake_get_source)
+
+    res = await dags.get_dag_source({"dag_id": "my_dag"})
+
+    assert res["success"] is True
+    assert res["data"] == "from airflow import DAG\n# source"
+    assert res["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_dag_source_missing_id():
+    with pytest.raises(Exception):
+        await dags.get_dag_source({})

@@ -14,14 +14,18 @@ def _mock_transport(request):
         except Exception:
             body = {}
 
-    if request.method == "GET" and url == "/api/v1/dags":
+    if request.method == "GET" and url == "/api/v2/dags":
         return httpx.Response(200, json={"dags": []})
-    if request.method == "POST" and url.startswith("/api/v1/dags/") and url.endswith("/dagRuns"):
+    if request.method == "POST" and url.startswith("/api/v2/dags/") and url.endswith("/dagRuns"):
+        assert "logical_date" in body
         return httpx.Response(200, json={"dag_run_id": "r1", "state": "queued"})
-    if request.method == "PATCH" and url.startswith("/api/v1/dags/"):
+    if request.method == "PATCH" and url.startswith("/api/v2/dags/"):
         return httpx.Response(200, json={"dag_id": url.split("/")[-1], "is_paused": body.get("is_paused")})
     if request.method == "POST" and url.endswith("/setState"):
-        return httpx.Response(200, json={"state": body.get("state")})
+        return httpx.Response(405, json={"detail": "Method Not Allowed"})
+    if request.method == "POST" and url.endswith("/clearTaskInstances"):
+        assert body == {"dag_run_id": "run1", "task_ids": ["task1"], "dry_run": False}
+        return httpx.Response(200, json={"task_instances": [{"task_id": "task1"}], "total_entries": 1})
     return httpx.Response(404, json={"detail": "not found"})
 
 
@@ -44,4 +48,4 @@ async def test_list_and_trigger_and_pause_unpause_and_retry():
         assert res.get("is_paused") is False
 
         res = await client.retry_task("my_dag", "run1", "task1")
-        assert res.get("state") == "queued"
+        assert res.get("total_entries") == 1

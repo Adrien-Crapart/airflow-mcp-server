@@ -15,7 +15,17 @@ async def test_http_health():
         pytest.skip("Lifespan or httpx not installed in this environment")
 
     async with LifespanManager(app):
-        async with httpx.AsyncClient(app=app, base_url="http://testserver") as client:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             r = await client.get("/health")
             assert r.status_code == 200
             assert r.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_health_check_handler_direct():
+    from airflow_mcp_server.handlers.health import health_check
+
+    res = await health_check({})
+
+    assert res == {"success": True, "data": {"status": "ok"}, "error": None}

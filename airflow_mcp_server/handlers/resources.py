@@ -1,9 +1,38 @@
 """MCP Resources for read-only Airflow content via airflow:// URIs."""
 
 import json
-from typing import Any, Optional
+import re
+from typing import Any
 
-from airflow_mcp_server.airflow_client import client as airflow_client
+from airflow_mcp_server.airflow_client import AirflowPermissionError, client as airflow_client
+from airflow_mcp_server.config import cfg
+
+
+SENSITIVE_RESOURCE_KEY_RE = re.compile(
+    r"(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|client[_-]?secret|fernet|jwt|(?:^|[_-])key(?:$|[_-]))",
+    re.IGNORECASE,
+)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Return True if a key name is likely to carry sensitive data."""
+    return bool(SENSITIVE_RESOURCE_KEY_RE.search(key))
+
+
+def _mask_sensitive(value: Any) -> Any:
+    """Recursively mask sensitive keys in dictionaries and lists."""
+    if isinstance(value, dict):
+        masked: dict[Any, Any] = {}
+        for key, nested in value.items():
+            key_text = str(key)
+            if _is_sensitive_key(key_text):
+                masked[key] = "***MASKED***"
+            else:
+                masked[key] = _mask_sensitive(nested)
+        return masked
+    if isinstance(value, list):
+        return [_mask_sensitive(item) for item in value]
+    return value
 
 
 async def get_version_resource() -> str:
@@ -23,8 +52,11 @@ async def get_config_resource() -> str:
     MIME: application/json
     Note: May require admin permissions
     """
+    if not cfg.MCP_ENABLE_ADMIN_ENDPOINTS:
+        raise AirflowPermissionError("Config resource is disabled by server policy")
+
     config = await airflow_client.get_config()
-    return json.dumps(config, indent=2)
+    return json.dumps(_mask_sensitive(config), indent=2)
 
 
 async def get_dag_resource(dag_id: str) -> str:
@@ -66,14 +98,14 @@ async def get_variable_resource(key: str) -> str:
 
     Resource: airflow://variable/{key}
     MIME: application/json
-    Note: Variables with 'password', 'secret', 'token', 'api_key' in name are masked
+    Note: Variables with sensitive key names are masked
     """
     var = await airflow_client.get_variable(key)
-    # Mask values with 'password', 'secret', 'token', 'key' in name
-    if any(s in key.lower() for s in ["password", "secret", "token", "api_key"]):
+    # Mask value if the variable name itself indicates a secret.
+    if _is_sensitive_key(key.lower()):
         if isinstance(var, dict) and "value" in var:
             var = {**var, "value": "***MASKED***"}
-    return json.dumps(var, indent=2)
+    return json.dumps(_mask_sensitive(var), indent=2)
 
 
 async def get_providers_resource() -> str:
@@ -95,7 +127,8 @@ def register_all(mcp: Any) -> None:
     try:
         # Static resources (no parameters)
         mcp.resource("airflow://version", description="Airflow version and metadata")(get_version_resource)
-        mcp.resource("airflow://config", description="Airflow configuration (may require admin)")(get_config_resource)
+        if cfg.MCP_ENABLE_ADMIN_ENDPOINTS:
+            mcp.resource("airflow://config", description="Airflow configuration (may require admin)")(get_config_resource)
         mcp.resource("airflow://providers", description="Installed Airflow providers")(get_providers_resource)
 
         # Parameterized resources

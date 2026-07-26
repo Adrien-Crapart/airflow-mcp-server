@@ -1,9 +1,8 @@
-from typing import Any
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import ToolResponse, FetchLogsParams
 
 
-async def fetch_task_logs(params: dict) -> ToolResponse:
+async def fetch_task_logs(params: dict) -> dict:
     """Fetch logs for a specific task in a DAG run.
 
     Args:

@@ -36,7 +36,7 @@ async def test_request_error_mappings():
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
             client = AirflowClient(http_client=ac)
             with pytest.raises(exc):
-                await client._request("GET", "/api/v1/some")
+                await client._request("GET", "/api/v2/some")
 
 
 @pytest.mark.asyncio
@@ -55,7 +55,7 @@ async def test_request_server_error_retries(monkeypatch):
         monkeypatch.setattr(asyncio, "sleep", _nosleep)
 
         with pytest.raises(AirflowServerError):
-            await client._request("GET", "/api/v1/some", retries=2)
+            await client._request("GET", "/api/v2/some", retries=2)
 
 
 @pytest.mark.asyncio
@@ -65,6 +65,36 @@ async def test_get_task_logs_parsing():
         client = AirflowClient(http_client=ac)
         logs = await client.get_task_logs("d", "r", "t")
         assert logs == "my logs"
+
+
+@pytest.mark.asyncio
+async def test_get_task_logs_airflow3_content_events_parsing():
+    transport = _mk_transport(200, json_body={"content": [{"event": "line 1"}, {"event": "line 2"}]})
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        client = AirflowClient(http_client=ac)
+        logs = await client.get_task_logs("d", "r", "t")
+        assert logs == "line 1\nline 2"
+
+
+@pytest.mark.asyncio
+async def test_get_task_logs_falls_back_to_legacy_query_endpoint():
+    calls = {"count": 0}
+
+    def handler(request):
+        calls["count"] += 1
+        if request.url.path.endswith("/logs/1"):
+            return httpx.Response(404, json={"detail": "not found"})
+        if request.url.path.endswith("/logs"):
+            assert request.url.params.get("try_number") == "1"
+            return httpx.Response(200, json={"content": "legacy logs"})
+        return httpx.Response(404, json={"detail": "not found"})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        client = AirflowClient(http_client=ac)
+        logs = await client.get_task_logs("d", "r", "t")
+        assert logs == "legacy logs"
+        assert calls["count"] == 2
 
 
 @pytest.mark.asyncio
@@ -78,6 +108,9 @@ async def test_create_connection_payload():
                 body = _json.loads(request.content.decode())
             except Exception:
                 body = {}
+        assert body.get("connection_id") == "my_conn"
+        assert body.get("conn_type") == "http"
+        assert "type" not in body
         return httpx.Response(200, json=body)
 
     transport = httpx.MockTransport(handler)

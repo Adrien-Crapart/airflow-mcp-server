@@ -1,4 +1,3 @@
-from typing import Any
 from airflow_mcp_server.schemas import ToolResponse
 
 

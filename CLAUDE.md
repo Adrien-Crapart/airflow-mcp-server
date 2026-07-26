@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-An MCP (Model Context Protocol) server that exposes Apache Airflow operations as tools, allowing AI clients (Claude, etc.) to manage Airflow workflows via HTTP. Supports Airflow 2.x and 3.x.
+An MCP (Model Context Protocol) server that exposes Apache Airflow operations as tools, allowing AI clients (Claude, etc.) to manage Airflow workflows via HTTP. Targets Airflow 3.x exclusively (REST API `/api/v2`).
 
 ## Commands
 
@@ -37,14 +37,14 @@ MCP Client → POST /tool/{tool_name} → FastAPI (server.py)
                                           ↓
                               handlers/{domain}.py   (validates params via Pydantic)
                                           ↓
-                              airflow_client.py      (async HTTP, retry, version fallback)
+                              airflow_client.py      (async HTTP, retry, Airflow 3.x /api/v2)
                                           ↓
                               Airflow REST API       (Basic Auth)
 ```
 
 **Key files:**
 - [airflow_mcp_server/server.py](airflow_mcp_server/server.py) — FastAPI factory, dynamic tool loading via `pkgutil`, exception-to-HTTP-status mapping
-- [airflow_mcp_server/airflow_client.py](airflow_mcp_server/airflow_client.py) — `AirflowClient` singleton: retry with exponential backoff (3×), API v1/v2 path fallback, 30s timeout
+- [airflow_mcp_server/airflow_client.py](airflow_mcp_server/airflow_client.py) — `AirflowClient` singleton: retry with exponential backoff (3×), targets Airflow 3.x `/api/v2`, 30s timeout
 - [airflow_mcp_server/handlers/](airflow_mcp_server/handlers/) — One file per domain (`dags`, `tasks`, `logs`, `connections`, `health`); each exports `TOOLS: dict[str, AsyncCallable]`
 - [airflow_mcp_server/schemas.py](airflow_mcp_server/schemas.py) — Pydantic input models; `TOOL_INPUT_MODELS` maps tool name → model
 - [airflow_mcp_server/config.py](airflow_mcp_server/config.py) — All config from environment variables
@@ -64,7 +64,7 @@ MCP Client → POST /tool/{tool_name} → FastAPI (server.py)
 AIRFLOW_BASE_URL=http://localhost:8080   # required
 AIRFLOW_USERNAME=airflow
 AIRFLOW_PASSWORD=airflow
-AIRFLOW_VERSION=2                        # "2" or "3"
+AIRFLOW_API_TOKEN=                       # optional Bearer token, takes precedence over BasicAuth
 MCP_SERVER_HOST=127.0.0.1
 MCP_SERVER_PORT=8000
 LOG_LEVEL=INFO

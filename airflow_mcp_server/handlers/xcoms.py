@@ -1,4 +1,3 @@
-from typing import Any
 
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
@@ -7,7 +6,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def get_xcom(params: dict) -> ToolResponse:
+async def get_xcom(params: dict) -> dict:
     """Retrieve an XCom value from a task instance.
 
     Args:

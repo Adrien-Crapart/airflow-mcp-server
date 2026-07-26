@@ -1,4 +1,3 @@
-from typing import Any
 
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
@@ -7,7 +6,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_import_errors(params: dict) -> ToolResponse:
+async def list_import_errors(params: dict) -> dict:
     """List all DAG import errors.
 
     Useful for debugging DAGs that failed to parse or import.

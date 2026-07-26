@@ -1,4 +1,3 @@
-from typing import Any
 
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
@@ -8,7 +7,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_event_logs(params: dict) -> ToolResponse:
+async def list_event_logs(params: dict) -> dict:
     """List Airflow audit trail / event logs.
 
     Useful for tracking who triggered what and when, including DAG runs,
@@ -32,7 +31,7 @@ async def list_event_logs(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=logs, error=None).model_dump()
 
 
-async def get_event_log(params: dict) -> ToolResponse:
+async def get_event_log(params: dict) -> dict:
     """Fetch details of a specific audit event.
 
     Args:

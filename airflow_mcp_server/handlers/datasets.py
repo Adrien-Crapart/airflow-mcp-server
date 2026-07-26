@@ -1,4 +1,3 @@
-from typing import Any
 
 from airflow_mcp_server.airflow_client import client as airflow_client
 from airflow_mcp_server.schemas import (
@@ -8,7 +7,7 @@ from airflow_mcp_server.schemas import (
 )
 
 
-async def list_datasets(params: dict) -> ToolResponse:
+async def list_datasets(params: dict) -> dict:
     """List all Airflow datasets (data lineage assets).
 
     In Airflow 3.x, datasets are called "assets". The client handles
@@ -29,7 +28,7 @@ async def list_datasets(params: dict) -> ToolResponse:
     return ToolResponse(success=True, data=datasets, error=None).model_dump()
 
 
-async def get_dataset(params: dict) -> ToolResponse:
+async def get_dataset(params: dict) -> dict:
     """Retrieve a dataset by URI.
 
     Args:
